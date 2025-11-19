@@ -105,14 +105,6 @@ export interface DesignState {
   flipY: boolean;
 }
 
-export interface DesignSuggestion {
-  fontFamily: FontFamily;
-  textColor: string;
-  shadowColor: string;
-  blendMode: string;
-  vibeReasoning: string;
-}
-
 export interface AppSettings {
   enableZoom: boolean;
 }

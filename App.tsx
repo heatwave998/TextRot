@@ -1,12 +1,10 @@
-
 import React, { useState, useRef } from 'react';
 import Canvas, { CanvasHandle } from './components/Canvas';
 import Controls from './components/Controls';
 import SettingsModal from './components/SettingsModal';
 import ConfirmationModal from './components/ConfirmationModal';
-import CropModal from './components/CropModal';
 import { DesignState, AppSettings, AspectRatio, Orientation } from './types';
-import { generateBackgroundImage } from './services/geminiService';
+import { generateBackgroundImage, editImage } from './services/geminiService';
 
 // Initial State
 const DEFAULT_DESIGN: DesignState = {
@@ -26,8 +24,8 @@ const DEFAULT_DESIGN: DesignState = {
   textBlur: 0,
   shadowBlur: 20,
   hasShadow: true,
-  shadowOffset: 10, // Default offset
-  shadowAngle: 45,  // Default bottom-right
+  shadowOffset: 20,
+  shadowAngle: 45,
   // Modifiers
   isBold: false,
   isItalic: false,
@@ -51,7 +49,7 @@ const DEFAULT_DESIGN: DesignState = {
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
-  enableZoom: true // Zoom enabled by default
+  enableZoom: true
 };
 
 export default function App() {
@@ -59,11 +57,10 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBlankConfirmOpen, setIsBlankConfirmOpen] = useState(false);
+  const [isGenerateConfirmOpen, setIsGenerateConfirmOpen] = useState(false);
   
   // Image State
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [pendingImageSrc, setPendingImageSrc] = useState<string | null>(null);
-  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
 
   const [isGenerating, setIsGenerating] = useState(false);
   
@@ -100,28 +97,63 @@ export default function App() {
     }
   };
 
+  const handleGenerateClick = () => {
+    if (imageSrc) {
+      setIsGenerateConfirmOpen(true);
+    } else {
+      handleGenerate();
+    }
+  };
+
+  const handleEdit = async () => {
+      if (!imageSrc || !design.prompt) return;
+      
+      setIsGenerating(true);
+      try {
+          const editedImgData = await editImage(imageSrc, design.prompt);
+          setImageSrc(editedImgData);
+      } catch (error) {
+          alert("Failed to edit image. Ensure your API key is valid and supports Imagen 4.0 editing.");
+          console.error(error);
+      } finally {
+          setIsGenerating(false);
+      }
+  };
+
   const executeBlankCanvas = () => {
     const canvas = document.createElement('canvas');
-    const BASE_SIZE = 1024;
+    const BASE = 1024;
     
-    // Parse the supported ratio string (e.g. "16:9")
-    const [wStr, hStr] = design.aspectRatio.split(':');
-    const ratioMultiplier = Number(wStr) / Number(hStr); // e.g. 1.77 for 16:9
+    // Explicit hardcoded lookups to guarantee correct aspect ratio dimensions
+    const ratioKey = design.aspectRatio;
+    const isPortrait = design.orientation === 'portrait';
+    
+    let width = 1024;
+    let height = 1024;
 
-    let width, height;
-
-    if (design.orientation === 'landscape') {
-        // Landscape: Height is Base, Width is scaled up
-        height = BASE_SIZE;
-        width = Math.round(BASE_SIZE * ratioMultiplier);
+    if (isPortrait) {
+        // Portrait Mode: Width fixed at 1024, Height scales up
+        width = 1024;
+        switch (ratioKey) {
+            case '1:1': height = 1024; break;
+            case '4:3': height = 1365; break; // 4:3 inverted is 3:4 (1024 * 1.333)
+            case '3:2': height = 1536; break; // 3:2 inverted is 2:3 (1024 * 1.5)
+            case '16:9': height = 1820; break; // 16:9 inverted is 9:16 (1024 * 1.777)
+        }
     } else {
-        // Portrait: Width is Base, Height is scaled up
-        width = BASE_SIZE;
-        height = Math.round(BASE_SIZE * ratioMultiplier);
+        // Landscape Mode: Height fixed at 1024, Width scales up
+        height = 1024;
+        switch (ratioKey) {
+            case '1:1': width = 1024; break;
+            case '4:3': width = 1365; break; // 1.333
+            case '3:2': width = 1536; break; // 1.5
+            case '16:9': width = 1820; break; // 1.777
+        }
     }
 
     canvas.width = width;
     canvas.height = height;
+    
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.clearRect(0, 0, width, height);
     
@@ -146,14 +178,14 @@ export default function App() {
     }
   };
 
-  const RATIO_MAP: Record<AspectRatio, number> = {
-    '1:1': 1,
-    '4:3': 4/3,
-    '3:2': 3/2,
-    '16:9': 16/9
-  };
-
   const handleImageUpload = (file: File) => {
+    // 1. Size Limit Check (25MB)
+    const MAX_SIZE = 25 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+        alert("File is too large. Please upload an image smaller than 25MB.");
+        return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result) {
@@ -163,50 +195,46 @@ export default function App() {
         img.onload = () => {
             const width = img.naturalWidth;
             const height = img.naturalHeight;
-            
-            const isPortrait = height > width;
-            // Normalize ratio to be >= 1 for comparison against our Landscape keys
-            const normalizedRatio = isPortrait ? height / width : width / height;
-            
-            let bestMatch: AspectRatio | null = null;
-            let minDiff = 0.03; // Tolerance
+            const imgRatio = width / height;
 
-            (Object.keys(RATIO_MAP) as AspectRatio[]).forEach(key => {
-                const target = RATIO_MAP[key];
-                const diff = Math.abs(normalizedRatio - target);
+            // Determine Orientation
+            const newOrientation: Orientation = width >= height ? 'landscape' : 'portrait';
+
+            // Standard Ratios (Landscape values)
+            const standards: { key: AspectRatio, val: number }[] = [
+                { key: '1:1', val: 1 },
+                { key: '4:3', val: 4/3 }, // 1.333
+                { key: '3:2', val: 3/2 }, // 1.5
+                { key: '16:9', val: 16/9 } // 1.777
+            ];
+
+            // Normalize for comparison (always >= 1)
+            const normRatio = imgRatio >= 1 ? imgRatio : 1/imgRatio;
+
+            // Find closest standard ratio for UI display only
+            let closestRatio: AspectRatio = '1:1';
+            let minDiff = Infinity;
+            
+            standards.forEach(s => {
+                const diff = Math.abs(normRatio - s.val);
                 if (diff < minDiff) {
                     minDiff = diff;
-                    bestMatch = key;
+                    closestRatio = s.key;
                 }
             });
 
-            if (bestMatch) {
-                // Perfect standard match found.
-                setDesign(prev => ({
-                    ...prev,
-                    aspectRatio: bestMatch!,
-                    orientation: isPortrait ? 'portrait' : 'landscape'
-                }));
-                setImageSrc(result);
-            } else {
-                // Non-standard ratio. Prompt user to crop.
-                setPendingImageSrc(result);
-                setIsCropModalOpen(true);
-            }
+            // Set State (No Cropping, Accept As Is)
+            setDesign(prev => ({
+                ...prev,
+                aspectRatio: closestRatio,
+                orientation: newOrientation
+            }));
+            setImageSrc(result);
         };
         img.src = result;
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleCropConfirm = (croppedDataUrl: string, ratio: AspectRatio, orientation: Orientation) => {
-      setImageSrc(croppedDataUrl);
-      setDesign(prev => ({
-          ...prev,
-          aspectRatio: ratio,
-          orientation: orientation
-      }));
   };
 
   const handleDownload = async () => {
@@ -243,12 +271,14 @@ export default function App() {
         <Controls 
           design={design} 
           setDesign={setDesign}
-          onGenerate={handleGenerate}
+          onGenerate={handleGenerateClick}
+          onEdit={handleEdit}
           onBlank={handleBlankClick}
           onDownload={handleDownload}
           onOpenSettings={() => setIsSettingsOpen(true)}
           isGenerating={isGenerating}
           vibeReasoning={null}
+          hasImage={!!imageSrc}
         />
       </div>
 
@@ -260,7 +290,7 @@ export default function App() {
         onSettingsChange={setSettings}
       />
 
-      {/* Confirmation Modal */}
+      {/* Confirmation Modal for Blank Canvas */}
       <ConfirmationModal
         isOpen={isBlankConfirmOpen}
         onClose={() => setIsBlankConfirmOpen(false)}
@@ -269,12 +299,13 @@ export default function App() {
         message="This will clear your current artwork and text styles. This action cannot be undone."
       />
 
-      {/* Crop Modal */}
-      <CropModal
-        isOpen={isCropModalOpen}
-        imageSrc={pendingImageSrc}
-        onClose={() => setIsCropModalOpen(false)}
-        onConfirm={handleCropConfirm}
+      {/* Confirmation Modal for Generate */}
+      <ConfirmationModal
+        isOpen={isGenerateConfirmOpen}
+        onClose={() => setIsGenerateConfirmOpen(false)}
+        onConfirm={handleGenerate}
+        title="Generate New Image?"
+        message="This will replace your current image. Any unsaved changes will be lost."
       />
     </div>
   );

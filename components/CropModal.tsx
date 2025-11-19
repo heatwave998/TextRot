@@ -1,18 +1,17 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Check, Move, Smartphone, Monitor, ZoomIn, ZoomOut } from 'lucide-react';
-import { AspectRatio, Orientation } from '../types';
+import { X, Check, Move, ZoomIn, ZoomOut } from 'lucide-react';
+import { AspectRatio } from '../types';
 
 interface CropModalProps {
   isOpen: boolean;
   imageSrc: string | null;
   onClose: () => void;
-  onConfirm: (croppedDataUrl: string, ratio: AspectRatio, orientation: Orientation) => void;
+  onConfirm: (croppedDataUrl: string, ratio: AspectRatio) => void;
 }
 
 const CropModal: React.FC<CropModalProps> = ({ isOpen, imageSrc, onClose, onConfirm }) => {
   const [selectedRatio, setSelectedRatio] = useState<AspectRatio>('1:1');
-  const [orientation, setOrientation] = useState<Orientation>('landscape');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -27,16 +26,12 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, imageSrc, onClose, onConf
         const img = new Image();
         img.onload = () => {
             const r = img.width / img.height;
-            const isPortrait = img.height > img.width;
-            
-            setOrientation(isPortrait ? 'portrait' : 'landscape');
             
             // Attempt to guess closest ratio to prepopulate
-            const checkRatio = isPortrait ? img.height / img.width : r;
-            if (Math.abs(checkRatio - 1) < 0.2) setSelectedRatio('1:1');
-            else if (Math.abs(checkRatio - 4/3) < 0.2) setSelectedRatio('4:3');
-            else if (Math.abs(checkRatio - 3/2) < 0.2) setSelectedRatio('3:2');
-            else if (Math.abs(checkRatio - 16/9) < 0.2) setSelectedRatio('16:9');
+            if (Math.abs(r - 1) < 0.2) setSelectedRatio('1:1');
+            else if (Math.abs(r - 4/3) < 0.2) setSelectedRatio('4:3');
+            else if (Math.abs(r - 3/2) < 0.2) setSelectedRatio('3:2');
+            else if (Math.abs(r - 16/9) < 0.2) setSelectedRatio('16:9');
             else setSelectedRatio('1:1'); // Fallback
 
             setZoom(1);
@@ -49,9 +44,7 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, imageSrc, onClose, onConf
   // Calculate target numeric aspect ratio based on current selection
   const getTargetRatio = () => {
     const [w, h] = selectedRatio.split(':').map(Number);
-    let r = w / h;
-    if (orientation === 'portrait' && selectedRatio !== '1:1') r = 1 / r;
-    return r;
+    return w / h;
   };
 
   // Helper: Constrain Pan to keep image covering the crop area
@@ -101,12 +94,12 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, imageSrc, onClose, onConf
           y: Math.max(-maxPanY, Math.min(maxPanY, currentPan.y))
       };
 
-  }, [selectedRatio, orientation]);
+  }, [selectedRatio]);
 
   // Re-constrain when parameters change
   useEffect(() => {
       setPan(p => constrainPan(p, zoom));
-  }, [zoom, selectedRatio, orientation, constrainPan]);
+  }, [zoom, selectedRatio, constrainPan]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
@@ -196,7 +189,7 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, imageSrc, onClose, onConf
           0, 0, visibleW, visibleH // Destination
       );
       
-      onConfirm(canvas.toDataURL('image/jpeg', 0.95), selectedRatio, orientation);
+      onConfirm(canvas.toDataURL('image/jpeg', 0.95), selectedRatio);
       onClose();
   };
 
@@ -285,29 +278,8 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, imageSrc, onClose, onConf
                 ))}
             </div>
 
-            {/* Orientation & Zoom */}
+            {/* Zoom */}
             <div className="flex items-center gap-4 bg-neutral-900 p-2 rounded-[3px] border border-neutral-800 px-4">
-                 <div className="flex gap-1 bg-neutral-950 p-1 rounded-[2px] shrink-0">
-                     <button 
-                        onClick={() => setOrientation('landscape')}
-                        disabled={selectedRatio === '1:1'}
-                        className={`p-2 rounded-[2px] ${orientation === 'landscape' ? 'bg-neutral-800 text-white' : 'text-neutral-500'} ${selectedRatio === '1:1' ? 'opacity-30' : ''}`}
-                        title="Landscape"
-                     >
-                         <Monitor size={16} />
-                     </button>
-                     <button 
-                        onClick={() => setOrientation('portrait')}
-                        disabled={selectedRatio === '1:1'}
-                        className={`p-2 rounded-[2px] ${orientation === 'portrait' ? 'bg-neutral-800 text-white' : 'text-neutral-500'} ${selectedRatio === '1:1' ? 'opacity-30' : ''}`}
-                        title="Portrait"
-                     >
-                         <Smartphone size={16} />
-                     </button>
-                 </div>
-
-                 <div className="h-6 w-px bg-neutral-800 mx-2"></div>
-
                  <div className="flex-1 flex items-center gap-3">
                      <ZoomOut size={14} className="text-neutral-500" />
                      <input 

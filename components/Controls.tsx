@@ -1,22 +1,24 @@
-
 import React from 'react';
 import { DesignState, FontFamily, AspectRatio, SpecialEffect } from '../types';
 import { 
   Type, Palette, Layers, Move, Download, Sparkles, 
   Bold, Italic, CaseUpper, FlipHorizontal, FlipVertical, 
-  RotateCw, CircleDashed, Square, Smartphone, Monitor, Settings, FilePlus,
-  Ban, Compass, ToggleRight, ToggleLeft
+  RotateCw, CircleDashed, Square, Settings, FilePlus,
+  Ban, Compass, ToggleRight, ToggleLeft, Paintbrush,
+  Monitor, Smartphone
 } from 'lucide-react';
 
 interface ControlsProps {
   design: DesignState;
   setDesign: React.Dispatch<React.SetStateAction<DesignState>>;
   onGenerate: () => void;
+  onEdit: () => void;
   onBlank: () => void;
   onDownload: () => void;
   onOpenSettings: () => void;
   isGenerating: boolean;
   vibeReasoning: string | null;
+  hasImage: boolean;
 }
 
 const FONTS: FontFamily[] = [
@@ -76,11 +78,13 @@ const Controls: React.FC<ControlsProps> = ({
   design, 
   setDesign, 
   onGenerate, 
+  onEdit,
   onBlank,
   onDownload,
   onOpenSettings,
   isGenerating,
-  vibeReasoning
+  vibeReasoning,
+  hasImage
 }) => {
 
   const update = (key: keyof DesignState, value: any) => {
@@ -91,13 +95,13 @@ const Controls: React.FC<ControlsProps> = ({
     setDesign(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Helper to display ratio label based on orientation
+  // Helper to display flipped ratio label in UI if Portrait
   const getRatioLabel = (ratio: AspectRatio) => {
-    if (design.orientation === 'portrait' && ratio !== '1:1') {
-        const [w, h] = ratio.split(':');
-        return `${h}:${w}`;
-    }
-    return ratio;
+      if (design.orientation === 'portrait') {
+          const [w, h] = ratio.split(':');
+          return `${h}:${w}`;
+      }
+      return ratio;
   };
 
   return (
@@ -115,10 +119,10 @@ const Controls: React.FC<ControlsProps> = ({
         </div>
         <button 
             onClick={onOpenSettings}
-            className="text-neutral-500 hover:text-white transition-colors p-1 rounded-[3px] hover:bg-neutral-800"
+            className="text-neutral-500 hover:text-white transition-colors p-2 rounded-[3px] hover:bg-neutral-800"
             title="Settings"
         >
-            <Settings size={18} />
+            <Settings size={20} />
         </button>
       </div>
 
@@ -129,16 +133,44 @@ const Controls: React.FC<ControlsProps> = ({
         <div className="p-6 border-b border-neutral-800 space-y-4">
           <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider">Prompt</label>
           <textarea 
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-[3px] p-3 text-sm focus:outline-none focus:border-pink-500 transition-colors resize-none h-24"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-[3px] p-3 text-sm focus:outline-none focus:border-pink-500 transition-colors resize-y min-h-[6rem]"
             placeholder="e.g. A cyberpunk samurai in neon rain..."
             value={design.prompt}
             onChange={(e) => update('prompt', e.target.value)}
-            title="Describe the image you want to generate"
+            title="Describe the image you want to generate or edit"
           />
           
           {/* Aspect Ratio Controls */}
           <div className="space-y-2">
-              <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider">Aspect Ratio</label>
+              <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider">Aspect Ratio</label>
+                  {/* Orientation Toggle */}
+                  <div className="flex bg-neutral-950 p-0.5 rounded-[3px] border border-neutral-800">
+                    <button
+                        onClick={() => update('orientation', 'landscape')}
+                        className={`px-2 py-1 rounded-[2px] text-[10px] transition-all ${
+                            design.orientation === 'landscape'
+                            ? 'bg-neutral-800 text-white shadow-sm'
+                            : 'text-neutral-500 hover:text-neutral-300'
+                        }`}
+                        title="Landscape"
+                    >
+                        <Monitor size={12} />
+                    </button>
+                    <button
+                        onClick={() => update('orientation', 'portrait')}
+                        className={`px-2 py-1 rounded-[2px] text-[10px] transition-all ${
+                            design.orientation === 'portrait'
+                            ? 'bg-neutral-800 text-white shadow-sm'
+                            : 'text-neutral-500 hover:text-neutral-300'
+                        }`}
+                        title="Portrait"
+                    >
+                        <Smartphone size={12} />
+                    </button>
+                  </div>
+              </div>
+              
               <div className="flex gap-1">
                   {RATIOS.map((ratio) => (
                       <button
@@ -149,7 +181,7 @@ const Controls: React.FC<ControlsProps> = ({
                               ? 'bg-neutral-800 text-pink-500 border-pink-500/50'
                               : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900'
                           }`}
-                          title={`Set aspect ratio to ${ratio}`}
+                          title={`Set aspect ratio to ${getRatioLabel(ratio)}`}
                       >
                           {getRatioLabel(ratio)}
                       </button>
@@ -157,35 +189,8 @@ const Controls: React.FC<ControlsProps> = ({
               </div>
           </div>
 
-          {/* Orientation Toggle */}
-          <div className="flex bg-neutral-950 p-1 rounded-[3px] border border-neutral-800">
-              <button
-                  onClick={() => update('orientation', 'landscape')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-[3px] text-xs transition-all ${
-                      design.orientation === 'landscape'
-                      ? 'bg-neutral-800 text-white shadow-sm'
-                      : 'text-neutral-500 hover:text-neutral-300'
-                  }`}
-                  title="Landscape Orientation"
-              >
-                  <Monitor size={14} />
-                  Landscape
-              </button>
-              <button
-                  onClick={() => update('orientation', 'portrait')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-[3px] text-xs transition-all ${
-                      design.orientation === 'portrait'
-                      ? 'bg-neutral-800 text-white shadow-sm'
-                      : 'text-neutral-500 hover:text-neutral-300'
-                  }`}
-                  title="Portrait Orientation"
-              >
-                  <Smartphone size={14} />
-                  Portrait
-              </button>
-          </div>
-
           <div className="flex gap-2">
+              {/* Generate Button */}
               <button 
                 onClick={onGenerate}
                 disabled={isGenerating || !design.prompt.trim()}
@@ -194,12 +199,12 @@ const Controls: React.FC<ControlsProps> = ({
                   ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed opacity-70' 
                   : 'bg-gradient-to-r from-pink-500 to-violet-600 text-white hover:brightness-110 hover:shadow-pink-500/20'
                 }`}
-                title={!design.prompt.trim() ? "Please enter a prompt" : "Generate new image and design styles"}
+                title={!design.prompt.trim() ? "Please enter a prompt" : "Generate new image"}
               >
                 {isGenerating ? (
                   <>
                     <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white"></span>
-                    Crafting...
+                    Processing...
                   </>
                 ) : (
                   <>
@@ -209,20 +214,29 @@ const Controls: React.FC<ControlsProps> = ({
                 )}
               </button>
 
+              {/* Edit Button */}
+              <button
+                onClick={onEdit}
+                disabled={isGenerating || !hasImage || !design.prompt.trim()}
+                className={`w-12 rounded-[3px] font-bold text-sm flex items-center justify-center transition-all border ${
+                    isGenerating || !hasImage || !design.prompt.trim()
+                    ? 'bg-neutral-900 text-neutral-700 border-neutral-800 cursor-not-allowed'
+                    : 'bg-neutral-800 text-white border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600'
+                }`}
+                title="Edit existing image using prompt"
+              >
+                  <Paintbrush size={18} />
+              </button>
+
+              {/* Blank Button */}
               <button
                   onClick={onBlank}
-                  className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 rounded-[3px] flex items-center justify-center"
+                  className="w-12 bg-neutral-800 hover:bg-neutral-700 text-white rounded-[3px] flex items-center justify-center"
                   title="Start with a blank transparent canvas"
               >
                   <FilePlus size={18} />
               </button>
           </div>
-
-          {vibeReasoning && (
-              <div className="bg-neutral-950/50 p-3 rounded-[3px] text-[10px] text-neutral-400 border border-neutral-800 italic">
-                  <span className="text-pink-500 not-italic font-bold">AI Director:</span> "{vibeReasoning}"
-              </div>
-          )}
         </div>
 
         {/* Typography Controls */}
@@ -235,7 +249,7 @@ const Controls: React.FC<ControlsProps> = ({
               <span className="text-sm font-medium">Text Content</span>
             </div>
             <textarea 
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-[3px] p-2 text-sm focus:border-pink-500 outline-none"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-[3px] p-2 text-sm focus:border-pink-500 outline-none resize-y"
               rows={2}
               value={design.textOverlay}
               onChange={(e) => update('textOverlay', e.target.value)}
@@ -266,24 +280,24 @@ const Controls: React.FC<ControlsProps> = ({
             <div className="flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
                 <button 
                   onClick={() => toggle('isBold')}
-                  className={`flex-1 p-2 rounded-[3px] hover:bg-neutral-800 flex justify-center ${design.isBold ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                  className={`flex-1 h-10 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.isBold ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                   title="Toggle Bold"
                 >
-                  <Bold size={16} />
+                  <Bold size={20} />
                 </button>
                 <button 
                   onClick={() => toggle('isItalic')}
-                  className={`flex-1 p-2 rounded-[3px] hover:bg-neutral-800 flex justify-center ${design.isItalic ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                  className={`flex-1 h-10 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.isItalic ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                   title="Toggle Italic"
                 >
-                  <Italic size={16} />
+                  <Italic size={20} />
                 </button>
                 <button 
                   onClick={() => toggle('isUppercase')}
-                  className={`flex-1 p-2 rounded-[3px] hover:bg-neutral-800 flex justify-center ${design.isUppercase ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                  className={`flex-1 h-10 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.isUppercase ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                   title="Toggle Uppercase"
                 >
-                  <CaseUpper size={16} />
+                  <CaseUpper size={20} />
                 </button>
             </div>
 
@@ -316,7 +330,7 @@ const Controls: React.FC<ControlsProps> = ({
                         className="text-neutral-500 hover:text-pink-500 transition-colors focus:outline-none flex items-center justify-end"
                         title="Toggle Shadow"
                       >
-                          {design.hasShadow ? <ToggleRight size={28} className="text-pink-500"/> : <ToggleLeft size={28}/>}
+                          {design.hasShadow ? <ToggleRight size={32} className="text-pink-500"/> : <ToggleLeft size={32}/>}
                       </button>
                   </div>
                   <div className={`flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1 h-10 transition-opacity ${!design.hasShadow ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -332,52 +346,8 @@ const Controls: React.FC<ControlsProps> = ({
               </div>
             </div>
 
-            {/* Shadow Controls (Expanded) */}
-            <div className={`space-y-2 pt-2 transition-opacity ${!design.hasShadow ? 'opacity-50 pointer-events-none' : ''}`}>
-                  {/* Shadow Blur */}
-                  <div>
-                      <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
-                          <span>Shadow Blur</span>
-                          <span>{design.shadowBlur}</span>
-                      </label>
-                      <input 
-                          type="range" min="0" max="100" step="1"
-                          value={design.shadowBlur}
-                          onChange={(e) => update('shadowBlur', parseInt(e.target.value))}
-                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      />
-                  </div>
-
-                   {/* Shadow Distance */}
-                   <div>
-                      <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
-                          <span>Shadow Distance</span>
-                          <span>{design.shadowOffset}</span>
-                      </label>
-                      <input 
-                          type="range" min="0" max="100" step="1"
-                          value={design.shadowOffset}
-                          onChange={(e) => update('shadowOffset', parseInt(e.target.value))}
-                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      />
-                  </div>
-
-                   {/* Shadow Angle */}
-                   <div className="flex items-center gap-2">
-                        <Compass size={14} className="text-neutral-500" />
-                        <input 
-                            type="range" min="0" max="360"
-                            value={design.shadowAngle}
-                            onChange={(e) => update('shadowAngle', parseInt(e.target.value))}
-                            className="flex-1 h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                            title="Shadow Angle"
-                        />
-                        <span className="text-xs font-mono text-neutral-500 w-8 text-right">{design.shadowAngle}°</span>
-                   </div>
-            </div>
-
             {/* Blurs & Opacity */}
-            <div className="space-y-2 pt-2 border-t border-neutral-800">
+            <div className="space-y-2 pt-2">
                   {/* Text Opacity */}
                   <div>
                       <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
@@ -405,6 +375,46 @@ const Controls: React.FC<ControlsProps> = ({
                           className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
                       />
                   </div>
+
+                  {/* Shadow Controls */}
+                  <div className={`transition-opacity space-y-2 pt-1 ${!design.hasShadow ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <div>
+                          <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
+                              <span>Shadow Blur</span>
+                              <span>{design.shadowBlur}</span>
+                          </label>
+                          <input 
+                              type="range" min="0" max="100" step="1"
+                              value={design.shadowBlur}
+                              onChange={(e) => update('shadowBlur', parseInt(e.target.value))}
+                              className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                          />
+                      </div>
+                      <div>
+                          <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
+                              <span>Shadow Offset</span>
+                              <span>{design.shadowOffset}</span>
+                          </label>
+                          <input 
+                              type="range" min="0" max="100" step="1"
+                              value={design.shadowOffset}
+                              onChange={(e) => update('shadowOffset', parseInt(e.target.value))}
+                              className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                          />
+                      </div>
+                      <div>
+                          <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
+                              <span>Shadow Angle</span>
+                              <span>{design.shadowAngle}°</span>
+                          </label>
+                          <input 
+                              type="range" min="0" max="360" step="1"
+                              value={design.shadowAngle}
+                              onChange={(e) => update('shadowAngle', parseInt(e.target.value))}
+                              className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                          />
+                      </div>
+                  </div>
             </div>
           </div>
 
@@ -418,7 +428,7 @@ const Controls: React.FC<ControlsProps> = ({
               <div className="flex gap-2">
                   <button
                       onClick={() => toggle('isHollow')}
-                      className={`flex-1 p-3 rounded-[3px] border transition-all flex flex-col items-center justify-center gap-2 ${
+                      className={`flex-1 h-12 rounded-[3px] border transition-all flex flex-col items-center justify-center gap-1 ${
                           design.isHollow 
                           ? 'bg-neutral-800 border-pink-500 text-pink-500' 
                           : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:bg-neutral-900'
@@ -426,12 +436,12 @@ const Controls: React.FC<ControlsProps> = ({
                       title="Toggle hollow style"
                   >
                       <CircleDashed size={20} strokeWidth={design.isHollow ? 2.5 : 1.5} />
-                      <span className="text-[10px] uppercase font-bold tracking-wider">Hollow</span>
+                      <span className="text-[9px] uppercase font-bold tracking-wider">Hollow</span>
                   </button>
 
                   <button
                       onClick={() => toggle('hasOutline')}
-                      className={`flex-1 p-3 rounded-[3px] border transition-all flex flex-col items-center justify-center gap-2 ${
+                      className={`flex-1 h-12 rounded-[3px] border transition-all flex flex-col items-center justify-center gap-1 ${
                           design.hasOutline 
                           ? 'bg-neutral-800 border-pink-500 text-pink-500' 
                           : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:bg-neutral-900'
@@ -439,72 +449,67 @@ const Controls: React.FC<ControlsProps> = ({
                       title="Toggle outline style"
                   >
                       <Square size={20} strokeWidth={design.hasOutline ? 3 : 1.5} />
-                      <span className="text-[10px] uppercase font-bold tracking-wider">Outline</span>
+                      <span className="text-[9px] uppercase font-bold tracking-wider">Outline</span>
                   </button>
               </div>
 
               {/* Special FX Selector */}
               <div className="grid grid-cols-4 gap-1 bg-neutral-950 p-1 rounded-[3px] border border-neutral-800 mt-2">
-                  {/* None */}
                   <button 
                     onClick={() => update('specialEffect', 'none')}
-                    className={`p-2 rounded-[3px] flex justify-center items-center h-10 ${design.specialEffect === 'none' ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-white'}`}
+                    className={`p-2 h-12 rounded-[3px] flex items-center justify-center ${design.specialEffect === 'none' ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-white'}`}
                     title="No Effect"
                   >
-                    <Ban size={20} />
+                    <Ban size={24} />
                   </button>
-                  
-                  {/* Glitch Icon: White A with Red/Blue Offset */}
                   <button 
                     onClick={() => update('specialEffect', 'glitch')}
-                    className={`p-2 rounded-[3px] flex justify-center items-center h-10 overflow-hidden relative ${design.specialEffect === 'glitch' ? 'bg-neutral-800' : 'hover:bg-neutral-900'}`}
-                    title="Glitch/Chromatic Aberration"
+                    className={`p-2 h-12 rounded-[3px] flex items-center justify-center ${design.specialEffect === 'glitch' ? 'bg-neutral-800 text-pink-500' : 'text-neutral-500 hover:text-white'}`}
+                    title="Glitch"
                   >
-                    <div className="relative font-bold font-sans text-lg select-none">
-                        <span className="absolute -left-[5px] text-red-500 opacity-70">A</span>
-                        <span className="absolute -right-[5px] text-blue-500 opacity-70">A</span>
+                    {/* Custom Glitch Icon */}
+                    <div className="relative font-bold text-2xl leading-none">
+                        <span className="absolute -left-[2px] -top-[1px] text-red-500 mix-blend-screen opacity-80">A</span>
+                        <span className="absolute -right-[2px] -bottom-[1px] text-cyan-500 mix-blend-screen opacity-80">A</span>
                         <span className="relative text-white">A</span>
                     </div>
                   </button>
-                  
-                  {/* Gradient Icon: Circle with Gradient */}
                   <button 
                     onClick={() => update('specialEffect', 'gradient')}
-                    className={`p-2 rounded-[3px] flex justify-center items-center h-10 ${design.specialEffect === 'gradient' ? 'bg-neutral-800' : 'hover:bg-neutral-900'}`}
+                    className={`p-2 h-12 rounded-[3px] flex items-center justify-center ${design.specialEffect === 'gradient' ? 'bg-neutral-800 text-violet-500' : 'text-neutral-500 hover:text-white'}`}
                     title="Gradient Fill"
                   >
-                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-pink-500 to-violet-500 ring-1 ring-white/20" />
+                    {/* Custom Gradient Icon */}
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-white to-violet-500 border border-white/20"></div>
                   </button>
-                  
-                  {/* Echo Icon: Stacked A's */}
                   <button 
                     onClick={() => update('specialEffect', 'echo')}
-                    className={`p-2 rounded-[3px] flex justify-center items-center h-10 overflow-hidden ${design.specialEffect === 'echo' ? 'bg-neutral-800' : 'hover:bg-neutral-900'}`}
+                    className={`p-2 h-12 rounded-[3px] flex items-center justify-center ${design.specialEffect === 'echo' ? 'bg-neutral-800 text-cyan-500' : 'text-neutral-500 hover:text-white'}`}
                     title="Echo / Motion Trail"
                   >
-                     <div className="relative font-bold font-sans text-lg select-none">
-                        <span className="absolute top-0 -left-2 text-white/20">A</span>
-                        <span className="absolute top-0 -left-1 text-white/50">A</span>
-                        <span className="relative text-white">A</span>
+                     {/* Custom Echo Icon */}
+                     <div className="relative font-bold text-2xl leading-none">
+                        <span className="absolute -left-[3px] top-0 opacity-20">A</span>
+                        <span className="absolute -left-[1.5px] top-0 opacity-50">A</span>
+                        <span className="relative">A</span>
                     </div>
                   </button>
               </div>
 
               {/* Dynamic Controls based on Selection */}
               {design.specialEffect !== 'none' && (
-                <div className="bg-neutral-950 p-3 rounded-[3px] border border-neutral-800 animate-in slide-in-from-top-2 fade-in space-y-3">
+                <div className="bg-neutral-950 p-3 rounded-[3px] border border-neutral-800 animate-in slide-in-from-top-2 fade-in space-y-2">
                     
                     {/* Rainbow Toggle for Glitch */}
                     {design.specialEffect === 'glitch' && (
                         <div className="flex items-center justify-between mb-2">
-                             <label className="text-[10px] text-neutral-500 uppercase tracking-wider font-bold">Rainbow Mode</label>
-                             <button 
-                                onClick={() => toggle('isRainbowGlitch')} 
-                                className={`text-neutral-500 transition-colors focus:outline-none flex items-center ${design.isRainbowGlitch ? 'text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-green-500 to-blue-500' : ''}`}
-                                title="Toggle Rainbow Glitch"
-                             >
-                                {design.isRainbowGlitch ? <ToggleRight size={28} className="text-pink-500" /> : <ToggleLeft size={28} />}
-                             </button>
+                            <label className="text-[10px] text-neutral-500">Rainbow Mode</label>
+                            <button 
+                                onClick={() => toggle('isRainbowGlitch')}
+                                className={`text-xs px-2 py-1 rounded-[3px] border ${design.isRainbowGlitch ? 'bg-neutral-800 border-pink-500 text-pink-500' : 'border-neutral-800 text-neutral-500'}`}
+                            >
+                                {design.isRainbowGlitch ? 'ON' : 'OFF'}
+                            </button>
                         </div>
                     )}
 
@@ -525,7 +530,7 @@ const Controls: React.FC<ControlsProps> = ({
                         />
                     </div>
                     
-                    {/* Angle/Direction Slider (Echo & Gradient & Rainbow Glitch) */}
+                    {/* Angle/Direction Slider (Echo, Gradient, and Rainbow Glitch) */}
                     {(design.specialEffect === 'echo' || design.specialEffect === 'gradient' || (design.specialEffect === 'glitch' && design.isRainbowGlitch)) && (
                         <div className="flex items-center gap-2">
                             <Compass size={14} className="text-neutral-500" />
@@ -540,51 +545,34 @@ const Controls: React.FC<ControlsProps> = ({
                         </div>
                     )}
 
-                    {/* Color Pickers for Special Effects */}
-                    {/* Gradient: End Color */}
-                    {design.specialEffect === 'gradient' && (
+                    {/* Secondary Color (Glitch or Gradient) */}
+                    {(design.specialEffect === 'glitch' || design.specialEffect === 'gradient') && !design.isRainbowGlitch && (
                         <div>
-                            <label className="text-[10px] text-neutral-500 block mb-1">End Color</label>
-                            <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1">
-                                <input 
-                                    type="color" 
-                                    value={design.effectColor}
-                                    onChange={(e) => update('effectColor', e.target.value)}
-                                    className="w-6 h-6 rounded-[3px] cursor-pointer bg-transparent border-none"
-                                />
-                                <span className="text-xs font-mono text-neutral-400">{design.effectColor}</span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Glitch: Dual Colors (Only if not Rainbow) */}
-                    {design.specialEffect === 'glitch' && !design.isRainbowGlitch && (
-                        <div className="grid grid-cols-2 gap-2">
-                             <div>
-                                <label className="text-[10px] text-neutral-500 block mb-1">Left Color</label>
-                                <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1 h-[34px]">
+                            <label className="text-[10px] text-neutral-500 block mb-1">
+                                {design.specialEffect === 'gradient' ? 'End Color' : 'Glitch Colors'}
+                            </label>
+                            <div className="flex gap-2">
+                                {/* Primary Effect Color (Left Glitch / Gradient End) */}
+                                <div className="flex-1 flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1">
                                     <input 
                                         type="color" 
                                         value={design.effectColor}
                                         onChange={(e) => update('effectColor', e.target.value)}
                                         className="w-6 h-6 rounded-[3px] cursor-pointer bg-transparent border-none"
-                                        title="Glitch Left Channel"
                                     />
-                                    <span className="text-xs font-mono text-neutral-400">{design.effectColor}</span>
                                 </div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] text-neutral-500 block mb-1">Right Color</label>
-                                <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1 h-[34px]">
-                                    <input 
-                                        type="color" 
-                                        value={design.effectColor2}
-                                        onChange={(e) => update('effectColor2', e.target.value)}
-                                        className="w-6 h-6 rounded-[3px] cursor-pointer bg-transparent border-none"
-                                        title="Glitch Right Channel"
-                                    />
-                                    <span className="text-xs font-mono text-neutral-400">{design.effectColor2}</span>
-                                </div>
+                                
+                                {/* Secondary Effect Color (Right Glitch - Only for Glitch) */}
+                                {design.specialEffect === 'glitch' && (
+                                    <div className="flex-1 flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1">
+                                        <input 
+                                            type="color" 
+                                            value={design.effectColor2}
+                                            onChange={(e) => update('effectColor2', e.target.value)}
+                                            className="w-6 h-6 rounded-[3px] cursor-pointer bg-transparent border-none"
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -669,12 +657,13 @@ const Controls: React.FC<ControlsProps> = ({
                           <span>Y</span>
                           <span>{design.overlayPosition.y}%</span>
                       </label>
+                      {/* Inverted Y Slider: Drag Right = Move Up (Decrease Y %) */}
                       <input 
                           type="range" min="0" max="100"
-                          value={100 - design.overlayPosition.y}
+                          value={100 - design.overlayPosition.y} 
                           onChange={(e) => update('overlayPosition', { ...design.overlayPosition, y: 100 - parseInt(e.target.value) })}
                           className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                          title="Vertical position"
+                          title="Vertical position (Right = Up)"
                       />
                 </div>
             </div>
@@ -710,17 +699,17 @@ const Controls: React.FC<ControlsProps> = ({
                   <div className="flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
                       <button 
                           onClick={() => toggle('flipX')}
-                          className={`p-2 rounded-[3px] hover:bg-neutral-800 ${design.flipX ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                          className={`h-8 w-8 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.flipX ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                           title="Flip horizontal"
                       >
-                          <FlipHorizontal size={14} />
+                          <FlipHorizontal size={16} />
                       </button>
                       <button 
                           onClick={() => toggle('flipY')}
-                          className={`p-2 rounded-[3px] hover:bg-neutral-800 ${design.flipY ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                          className={`h-8 w-8 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.flipY ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                           title="Flip vertical"
                       >
-                          <FlipVertical size={14} />
+                          <FlipVertical size={16} />
                       </button>
                   </div>
             </div>

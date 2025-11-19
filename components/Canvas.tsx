@@ -1,5 +1,5 @@
 
-import React, { useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useState, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { DesignState } from '../types';
 import { Upload } from 'lucide-react';
 
@@ -20,6 +20,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [zoomScale, setZoomScale] = useState(1);
+
+  // Reset zoom when the image changes (e.g. New Blank Canvas, Upload, or Generation)
+  useEffect(() => {
+    setZoomScale(1);
+  }, [imageSrc]);
 
   // Handle mouse wheel zoom
   const handleWheel = (e: React.WheelEvent) => {
@@ -428,7 +433,9 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   const getEmptyStateRatio = () => {
     const [w, h] = design.aspectRatio.split(':').map(Number);
     let ratio = w / h;
-    if (design.orientation === 'portrait' && design.aspectRatio !== '1:1') ratio = 1 / ratio;
+    if (design.orientation === 'portrait') {
+        ratio = h / w;
+    }
     return { aspectRatio: `${ratio}` };
   };
 

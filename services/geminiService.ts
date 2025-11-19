@@ -1,6 +1,5 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
-import { DesignSuggestion, AspectRatio, Orientation } from "../types";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { AspectRatio } from "../types";
 
 // Initialize the client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -9,23 +8,25 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
  * Generates the visual background using Imagen 4.0.
  * Supports explicit aspect ratios.
  */
-export const generateBackgroundImage = async (prompt: string, aspectRatio: AspectRatio, orientation: Orientation): Promise<string> => {
+export const generateBackgroundImage = async (prompt: string, aspectRatio: AspectRatio, orientation: 'landscape' | 'portrait' = 'landscape'): Promise<string> => {
   try {
     // Determine the API-compatible aspect ratio string
+    // API supports: "1:1", "3:4", "4:3", "9:16", "16:9"
     let targetRatio = '1:1';
     
     if (aspectRatio === '1:1') {
         targetRatio = '1:1';
+    } else if (aspectRatio === '16:9') {
+        targetRatio = orientation === 'portrait' ? '9:16' : '16:9';
+    } else if (aspectRatio === '4:3') {
+        targetRatio = orientation === 'portrait' ? '3:4' : '4:3';
+    } else if (aspectRatio === '3:2') {
+        // 3:2 is not supported natively by Imagen 4 (only 1:1, 3:4, 4:3, 9:16, 16:9)
+        // Fallback to closest.
+        targetRatio = orientation === 'portrait' ? '3:4' : '4:3';
     } else {
-        // Map user selection to API supported values (1:1, 3:4, 4:3, 9:16, 16:9)
-        // Note: 3:2 is not natively supported, mapping to 4:3/3:4
-        if (orientation === 'portrait') {
-            if (aspectRatio === '16:9') targetRatio = '9:16';
-            else targetRatio = '3:4'; // Covers 4:3 and 3:2
-        } else {
-            if (aspectRatio === '16:9') targetRatio = '16:9';
-            else targetRatio = '4:3'; // Covers 4:3 and 3:2
-        }
+        // Fallback
+        targetRatio = orientation === 'portrait' ? '3:4' : '4:3'; 
     }
 
     const response = await ai.models.generateImages({
@@ -50,56 +51,48 @@ export const generateBackgroundImage = async (prompt: string, aspectRatio: Aspec
 };
 
 /**
- * Acts as an "Art Director". Analyzes the user's prompt and suggests
- * the best CSS typography settings (Font, Color, Blend Mode).
+ * Edits the existing image based on a prompt using Gemini 2.5 Flash Image.
  */
-export const generateDesignTokens = async (prompt: string): Promise<DesignSuggestion> => {
+export const editImage = async (imageBase64: string, prompt: string): Promise<string> => {
   try {
+    // Extract pure base64 and mime type from Data URL
+    const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      throw new Error("Invalid image format");
+    }
+    const mimeType = matches[1];
+    const data = matches[2];
+
+    // Use Gemini 2.5 Flash Image for editing/inpainting capabilities
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `You are an expert Graphic Designer and Typography Director. 
-      Analyze this design prompt: "${prompt}". 
-      Suggest the best typography settings to overlay text onto an image generated from this prompt.
-      
-      Choose from these fonts ONLY: 
-      'Abril Fatface', 'Alfa Slab One', 'Amatic SC', 'Anton', 'Bangers', 'Bebas Neue', 'Bodoni Moda', 'Cinzel', 
-      'Cormorant Garamond', 'Crimson Text', 'DM Serif Display', 'Dancing Script', 'Eduardo Tunni', 'Fira Code', 
-      'Gloria Hallelujah', 'Great Vibes', 'Inter', 'Italiana', 'Josefin Sans', 'Lato', 'League Gothic', 
-      'Libre Baskerville', 'Lobster', 'Lora', 'Merriweather', 'Monoton', 'Montserrat', 'Noto Sans', 'Open Sans', 
-      'Orbitron', 'Oswald', 'PT Sans', 'PT Serif', 'Pacifico', 'Permanent Marker', 'Playfair Display', 'Poppins', 
-      'Raleway', 'Righteous', 'Roboto', 'Rubik Glitch', 'Shadows Into Light', 'Source Sans 3', 'Space Grotesque', 
-      'Space Mono', 'Syne', 'Unbounded', 'VT323'.
-      
-      Return a JSON object.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            fontFamily: { type: Type.STRING },
-            textColor: { type: Type.STRING, description: "Hex code" },
-            shadowColor: { type: Type.STRING, description: "Hex code for text shadow/glow" },
-            blendMode: { type: Type.STRING, description: "CSS mix-blend-mode like normal, overlay, screen, difference" },
-            vibeReasoning: { type: Type.STRING, description: "Short explanation of why these styles fit the prompt" }
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: data,
+              mimeType: mimeType,
+            },
           },
-          required: ["fontFamily", "textColor", "shadowColor", "blendMode", "vibeReasoning"]
-        }
-      }
+          {
+            text: `${prompt}. Maintain high quality and photorealism.`,
+          },
+        ],
+      },
+      config: {
+          responseModalities: [Modality.IMAGE],
+      },
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as DesignSuggestion;
+    const part = response.candidates?.[0]?.content?.parts?.[0];
+    if (part?.inlineData?.data) {
+      return `data:image/png;base64,${part.inlineData.data}`;
     }
-    throw new Error("Failed to parse design suggestions");
+    
+    throw new Error("No image generated from edit request");
+
   } catch (error) {
-    console.error("Design direction failed:", error);
-    // Fallback default
-    return {
-      fontFamily: 'Inter',
-      textColor: '#FFFFFF',
-      shadowColor: '#000000',
-      blendMode: 'normal',
-      vibeReasoning: 'Fallback due to error.'
-    };
+    console.error("Image editing failed:", error);
+    throw error;
   }
 };
