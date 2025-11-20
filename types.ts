@@ -68,6 +68,7 @@ export interface DesignState {
   textColor: string;
   shadowColor: string;
   textSize: number;
+  letterSpacing: number; // New: Kerning in em units (or pixels relative to font size)
   textAlign: 'left' | 'center' | 'right';
   overlayPosition: { x: number; y: number }; // Percentages 0-100
   blendMode: 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';

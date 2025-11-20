@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import Canvas, { CanvasHandle } from './components/Canvas';
 import Controls from './components/Controls';
@@ -16,6 +17,7 @@ const DEFAULT_DESIGN: DesignState = {
   textColor: '#FFFFFF',
   shadowColor: '#000000',
   textSize: 5,
+  letterSpacing: 0, // Default kerning
   textAlign: 'center',
   overlayPosition: { x: 50, y: 50 },
   blendMode: 'normal',
@@ -90,7 +92,7 @@ export default function App() {
       });
 
     } catch (error) {
-      alert("Something went wrong creating your masterpiece. Please check your API key.");
+      alert("Something went wrong creating your masterpiece. Please check your API key or quota.");
       console.error(error);
     } finally {
       setIsGenerating(false);
@@ -113,7 +115,7 @@ export default function App() {
           const editedImgData = await editImage(imageSrc, design.prompt);
           setImageSrc(editedImgData);
       } catch (error) {
-          alert("Failed to edit image. Ensure your API key is valid and supports Imagen 4.0 editing.");
+          alert("Failed to edit image. Ensure your API key is valid.");
           console.error(error);
       } finally {
           setIsGenerating(false);
@@ -122,32 +124,32 @@ export default function App() {
 
   const executeBlankCanvas = () => {
     const canvas = document.createElement('canvas');
-    const BASE = 1024;
     
     // Explicit hardcoded lookups to guarantee correct aspect ratio dimensions
+    // BASE = 2048px (2K Resolution)
     const ratioKey = design.aspectRatio;
     const isPortrait = design.orientation === 'portrait';
     
-    let width = 1024;
-    let height = 1024;
+    let width = 2048;
+    let height = 2048;
 
     if (isPortrait) {
-        // Portrait Mode: Width fixed at 1024, Height scales up
-        width = 1024;
+        // Portrait Mode: Width fixed at 2048, Height scales up
+        width = 2048;
         switch (ratioKey) {
-            case '1:1': height = 1024; break;
-            case '4:3': height = 1365; break; // 4:3 inverted is 3:4 (1024 * 1.333)
-            case '3:2': height = 1536; break; // 3:2 inverted is 2:3 (1024 * 1.5)
-            case '16:9': height = 1820; break; // 16:9 inverted is 9:16 (1024 * 1.777)
+            case '1:1': height = 2048; break;
+            case '4:3': height = 2730; break; // 4:3 inverted is 3:4 (approx)
+            case '3:2': height = 3072; break; // 3:2 inverted is 2:3
+            case '16:9': height = 3640; break; // 16:9 inverted is 9:16
         }
     } else {
-        // Landscape Mode: Height fixed at 1024, Width scales up
-        height = 1024;
+        // Landscape Mode: Height fixed at 2048, Width scales up
+        height = 2048;
         switch (ratioKey) {
-            case '1:1': width = 1024; break;
-            case '4:3': width = 1365; break; // 1.333
-            case '3:2': width = 1536; break; // 1.5
-            case '16:9': width = 1820; break; // 1.777
+            case '1:1': width = 2048; break;
+            case '4:3': width = 2730; break;
+            case '3:2': width = 3072; break;
+            case '16:9': width = 3640; break;
         }
     }
 
@@ -197,15 +199,15 @@ export default function App() {
             const height = img.naturalHeight;
             const imgRatio = width / height;
 
-            // Determine Orientation
+            // Determine Orientation based on actual dimensions
             const newOrientation: Orientation = width >= height ? 'landscape' : 'portrait';
 
             // Standard Ratios (Landscape values)
             const standards: { key: AspectRatio, val: number }[] = [
                 { key: '1:1', val: 1 },
-                { key: '4:3', val: 4/3 }, // 1.333
-                { key: '3:2', val: 3/2 }, // 1.5
-                { key: '16:9', val: 16/9 } // 1.777
+                { key: '4:3', val: 4/3 },
+                { key: '3:2', val: 3/2 },
+                { key: '16:9', val: 16/9 }
             ];
 
             // Normalize for comparison (always >= 1)
@@ -223,7 +225,7 @@ export default function App() {
                 }
             });
 
-            // Set State (No Cropping, Accept As Is)
+            // Update State - No Cropping, accept image as is
             setDesign(prev => ({
                 ...prev,
                 aspectRatio: closestRatio,

@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { DesignState } from '../types';
-import { Upload } from 'lucide-react';
+import { Upload, Maximize2 } from 'lucide-react';
 
 interface CanvasProps {
   imageSrc: string | null;
@@ -16,48 +16,109 @@ export interface CanvasHandle {
 }
 
 const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enableZoom, className, onImageUpload }, ref) => {
-  const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [zoomScale, setZoomScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const [imgDims, setImgDims] = useState<{ w: number, h: number } | null>(null);
 
-  // Reset zoom when the image changes (e.g. New Blank Canvas, Upload, or Generation)
+  // Reset zoom and get dims when the image changes
   useEffect(() => {
     setZoomScale(1);
+    setPan({ x: 0, y: 0 });
+    if (imageSrc) {
+        const i = new Image();
+        i.onload = () => {
+            setImgDims({ w: i.naturalWidth, h: i.naturalHeight });
+        };
+        i.src = imageSrc;
+    } else {
+        setImgDims(null);
+    }
   }, [imageSrc]);
 
   // Handle mouse wheel zoom
   const handleWheel = (e: React.WheelEvent) => {
     if (!enableZoom || !imageSrc) return;
     
-    // e.deltaY is usually 100 or -100. We want smooth zoom.
-    // -deltaY means zooming IN (up scroll), +deltaY means zooming OUT (down scroll)
     const scaleAmount = -e.deltaY * 0.001; 
-    const newScale = Math.min(Math.max(0.5, zoomScale + scaleAmount), 5);
+    const newScale = Math.min(Math.max(0.1, zoomScale + scaleAmount), 5); 
     
     setZoomScale(newScale);
+  };
+
+  // Panning Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+      if (!imageSrc || !enableZoom) return;
+      
+      // Left click only
+      if (e.button === 0) {
+          setIsPanning(true);
+          dragStartRef.current = {
+              x: e.clientX - pan.x,
+              y: e.clientY - pan.y
+          };
+          e.preventDefault();
+      }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+      if (isPanning) {
+          e.preventDefault();
+          setPan({
+              x: e.clientX - dragStartRef.current.x,
+              y: e.clientY - dragStartRef.current.y
+          });
+      }
+  };
+
+  const handleMouseUp = () => {
+      setIsPanning(false);
+  };
+
+  const calculateAspectRatio = (width: number, height: number) => {
+    const ratio = width / height;
+    if (Math.abs(ratio - 1) < 0.01) return '1:1';
+    if (Math.abs(ratio - 4/3) < 0.01) return '4:3';
+    if (Math.abs(ratio - 3/4) < 0.01) return '3:4';
+    if (Math.abs(ratio - 3/2) < 0.01) return '3:2';
+    if (Math.abs(ratio - 2/3) < 0.01) return '2:3';
+    if (Math.abs(ratio - 16/9) < 0.01) return '16:9';
+    if (Math.abs(ratio - 9/16) < 0.01) return '9:16';
+    if (Math.abs(ratio - 21/9) < 0.01) return '21:9';
+    
+    const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+    const divisor = gcd(width, height);
+    if (divisor < 10) return ratio.toFixed(2);
+    return `${width / divisor}:${height / divisor}`;
   };
 
   // Function to perform the actual canvas drawing for export
   const generateExport = async (): Promise<string> => {
     if (!imageSrc) throw new Error("No image to export");
 
+    // Wait for fonts to be ready to ensure correct rendering
+    await document.fonts.ready;
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error("Could not get canvas context");
 
-    // 1. Load Image to get natural dimensions
     const img = new Image();
-    img.src = imageSrc;
-    await new Promise((resolve) => { img.onload = resolve; });
+    // Ensure correct loading sequence
+    await new Promise((resolve, reject) => { 
+        img.onload = resolve; 
+        img.onerror = reject;
+        img.src = imageSrc; 
+    });
 
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
 
-    // 2. Draw Background
     ctx.drawImage(img, 0, 0);
 
-    // 3. Configure Text Style
     const fontSize = (design.textSize / 100) * canvas.width;
     const fontWeight = design.isBold ? 'bold' : 'normal';
     const fontStyle = design.isItalic ? 'italic' : 'normal';
@@ -65,27 +126,27 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${design.fontFamily}"`;
     ctx.textAlign = design.textAlign;
     ctx.textBaseline = 'middle';
+    
+    const scaledLetterSpacing = design.letterSpacing * (fontSize / 50); 
+    if ('letterSpacing' in ctx) {
+      // @ts-ignore
+      ctx.letterSpacing = `${scaledLetterSpacing}px`;
+    }
 
-    // 4. Calculate Text Lines & Metrics
     const rawText = design.isUppercase ? design.textOverlay.toUpperCase() : design.textOverlay;
     const lines = rawText.split('\n');
     const lineHeight = fontSize * 1.2;
     const totalHeight = lines.length * lineHeight;
     
-    // Calculate max line width for accurate gradient box
     let maxLineWidth = 0;
     lines.forEach(line => {
         const metrics = ctx.measureText(line);
         if (metrics.width > maxLineWidth) maxLineWidth = metrics.width;
     });
 
-    // 5. Prepare Styles (Fill/Gradient)
     let fillStyle: string | CanvasGradient = design.textColor;
     if (design.specialEffect === 'gradient' && !design.isHollow) {
-        // Gradient Math
         const angleRad = (design.effectAngle * Math.PI) / 180;
-        
-        // Calculate radius to cover the text box fully
         const r = Math.sqrt((maxLineWidth/2)**2 + (totalHeight/2)**2);
         
         const x1 = -Math.cos(angleRad) * r;
@@ -95,10 +156,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
 
         const grad = ctx.createLinearGradient(x1, y1, x2, y2);
         
-        // Map intensity (0-100) to spread from center
-        // 0 intensity = 50% 50% (Hard edge in middle)
-        // 100 intensity = 0% 100% (Full smooth gradient)
-        const halfSpread = design.effectIntensity / 2; // 0 to 50
+        const halfSpread = design.effectIntensity / 2; 
         const stop1 = Math.max(0, Math.min(1, (50 - halfSpread) / 100));
         const stop2 = Math.max(0, Math.min(1, (50 + halfSpread) / 100));
 
@@ -107,47 +165,43 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         fillStyle = grad;
     }
 
-    // 6. Position and Transformation
     const x = (design.overlayPosition.x / 100) * canvas.width;
     const y = (design.overlayPosition.y / 100) * canvas.height;
 
     ctx.save();
-    
-    // Move to the anchor point
     ctx.translate(x, y);
     
-    // Rotate
     if (design.rotation !== 0) {
         ctx.rotate((design.rotation * Math.PI) / 180);
     }
 
-    // Flip
     const scaleX = design.flipX ? -1 : 1;
     const scaleY = design.flipY ? -1 : 1;
     if (scaleX !== 1 || scaleY !== 1) {
         ctx.scale(scaleX, scaleY);
     }
 
-    // Apply global blend mode and opacity
     ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
     ctx.globalAlpha = design.opacity;
 
-    // Apply Filters (Blur)
     if (design.textBlur > 0) {
         ctx.filter = `blur(${design.textBlur}px)`;
     }
 
-    // --- RENDERING HELPERS ---
-    
+    // Fix alignment logic: Adjust X position based on textAlign to match DOM Rendering
+    // DOM uses a 100% width container centered on the point.
+    let xAlignmentOffset = 0;
+    if (design.textAlign === 'left') xAlignmentOffset = -canvas.width / 2;
+    if (design.textAlign === 'right') xAlignmentOffset = canvas.width / 2;
+
     const drawShadowPass = () => {
          if (!design.hasShadow) return;
 
          ctx.shadowColor = design.shadowColor;
          ctx.shadowBlur = (design.shadowBlur / 100) * (fontSize * 2); 
          
-         // Calculate Shadow Offset based on distance/angle
          const shadowRad = (design.shadowAngle * Math.PI) / 180;
-         const shadowDist = (design.shadowOffset / 100) * fontSize; // Scale relative to font
+         const shadowDist = (design.shadowOffset / 100) * fontSize; 
 
          ctx.shadowOffsetX = Math.cos(shadowRad) * shadowDist;
          ctx.shadowOffsetY = Math.sin(shadowRad) * shadowDist;
@@ -159,14 +213,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
             if (design.isHollow || design.hasOutline) {
                 ctx.lineWidth = design.hasOutline ? design.outlineWidth : 2;
                 ctx.strokeStyle = design.hasOutline ? design.outlineColor : design.textColor;
-                ctx.strokeText(line, 0, lineY);
+                ctx.strokeText(line, xAlignmentOffset, lineY);
             } else {
                 ctx.fillStyle = design.textColor; 
-                ctx.fillText(line, 0, lineY);
+                ctx.fillText(line, xAlignmentOffset, lineY);
             }
          });
          
-         // Clear shadow state immediately
          ctx.shadowColor = 'transparent';
          ctx.shadowBlur = 0;
          ctx.shadowOffsetX = 0;
@@ -177,32 +230,25 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         const startY = -(totalHeight / 2) + (lineHeight / 2);
         lines.forEach((line, index) => {
             const lineY = startY + (index * lineHeight) + yOffset;
-            
+            const finalX = xOffset + xAlignmentOffset;
+
             if (isStroke || design.isHollow) {
                 ctx.lineWidth = design.hasOutline ? design.outlineWidth : 2; 
                 ctx.strokeStyle = colorOverride || (design.hasOutline ? design.outlineColor : design.textColor);
-                ctx.strokeText(line, xOffset, lineY);
+                ctx.strokeText(line, finalX, lineY);
             } else {
-                // Fill
                 ctx.fillStyle = colorOverride || fillStyle;
-                ctx.fillText(line, xOffset, lineY);
+                ctx.fillText(line, finalX, lineY);
                 
-                // Outline on top of fill
                 if (design.hasOutline) {
                     ctx.lineWidth = design.outlineWidth;
                     ctx.strokeStyle = design.outlineColor;
-                    ctx.strokeText(line, xOffset, lineY);
+                    ctx.strokeText(line, finalX, lineY);
                 }
             }
         });
     };
 
-    // --- LAYERING ORDER ---
-    // 1. Background Effects (Echo, Glitch)
-    // 2. Shadow Pass (Standard)
-    // 3. Main Text (Foreground)
-
-    // 1. Draw Echo Trails (Background)
     if (design.specialEffect === 'echo') {
         const echoCount = 5;
         const startOpacity = design.opacity;
@@ -219,23 +265,12 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         ctx.globalAlpha = design.opacity;
     }
 
-    // 2. Draw Glitch Channels (Background)
     if (design.specialEffect === 'glitch') {
         const offset = (design.effectIntensity / 100) * (fontSize * 1.5);
         ctx.save();
         
         if (design.isRainbowGlitch) {
-             // Rainbow Mode: 7 Channels (ROYGBIV)
-             const colors = [
-                 '#FF0000', // Red
-                 '#FF7F00', // Orange
-                 '#FFFF00', // Yellow
-                 '#00FF00', // Green
-                 '#0000FF', // Blue
-                 '#4B0082', // Indigo
-                 '#9400D3'  // Violet
-             ];
-             // Increased spread multiplier for visibility
+             const colors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
              const spread = offset * 1.2; 
              const angleRad = (design.effectAngle * Math.PI) / 180;
              
@@ -243,8 +278,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
              ctx.globalCompositeOperation = 'screen';
 
              colors.forEach((c, i) => {
-                 // Calculate offset: Centered distribution
-                 const mid = Math.floor(colors.length / 2); // 3
+                 const mid = Math.floor(colors.length / 2); 
                  const dist = (i - mid) * spread;
                  const dx = Math.cos(angleRad) * dist;
                  const dy = Math.sin(angleRad) * dist;
@@ -252,16 +286,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
              });
 
         } else {
-            // Standard 2-Channel Glitch
             const c1 = design.effectColor;
             const c2 = design.effectColor2;
             
-            // Channel 1 (Left)
             ctx.globalAlpha = design.opacity * 0.8;
-            ctx.globalCompositeOperation = 'screen'; // Lighten/Screen usually looks best for glitch
+            ctx.globalCompositeOperation = 'screen'; 
             drawTextPass(-offset, 0, c1, design.isHollow);
 
-            // Channel 2 (Right) 
             ctx.globalAlpha = design.opacity * 0.8;
             drawTextPass(offset, 0, c2, design.isHollow); 
         }
@@ -269,15 +300,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         ctx.restore();
     }
 
-    // 3. Draw Standard Shadows (Unconditional Layer)
     drawShadowPass();
 
-    // 4. Draw Main Text Layer (Foreground)
     drawTextPass(0, 0, undefined, design.isHollow);
 
     ctx.restore();
-    
-    // Reset context
     ctx.filter = 'none'; 
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
@@ -288,8 +315,6 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   useImperativeHandle(ref, () => ({
     exportImage: generateExport
   }));
-
-  // --- DOM STYLES FOR PREVIEW ---
 
   const getStrokeStyle = () => {
     if (design.isHollow) {
@@ -305,14 +330,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
 
   const getFilterStyle = () => {
     let filters = [];
-    
-    // Use drop-shadow filter only if standard text-shadow is insufficient (e.g. hollow/stroke)
     if (design.hasShadow && (design.isHollow || design.hasOutline)) {
          const blurVal = (design.shadowBlur / 100) * 0.5; 
-         
-         // Calculate Offset
          const shadowRad = (design.shadowAngle * Math.PI) / 180;
-         const shadowDist = design.shadowOffset * 0.005; // Scale for em
+         const shadowDist = design.shadowOffset * 0.005; 
          const sx = Math.cos(shadowRad) * shadowDist;
          const sy = Math.sin(shadowRad) * shadowDist;
          
@@ -329,11 +350,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   const getSpecialEffectStyles = (): React.CSSProperties => {
       const styles: React.CSSProperties = {};
 
-      // Gradient
       if (design.specialEffect === 'gradient' && !design.isHollow) {
-          // Map intensity (0-100) to stops
-          // Intensity 0 = 50%/50% (Hard)
-          // Intensity 100 = 0%/100% (Soft)
           const halfSpread = design.effectIntensity / 2;
           const stop1 = 50 - halfSpread;
           const stop2 = 50 + halfSpread;
@@ -344,39 +361,25 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
           styles.color = 'transparent'; 
       }
 
-      // Build up Text Shadows (Layering: Top -> Bottom)
       const shadows: string[] = [];
 
-      // 1. Standard Shadow (Top layer in CSS list = Closest to text? No, actually first shadow is on top of subsequent shadows)
       if (design.hasShadow && !design.isHollow && !design.hasOutline) {
           const blurVal = (design.shadowBlur / 100) * 0.5;
-          
-          // Calculate Offset
           const shadowRad = (design.shadowAngle * Math.PI) / 180;
-          const shadowDist = design.shadowOffset * 0.005; // Scale for em
+          const shadowDist = design.shadowOffset * 0.005; 
           const sx = Math.cos(shadowRad) * shadowDist;
           const sy = Math.sin(shadowRad) * shadowDist;
           
           shadows.push(`${sx}em ${sy}em ${blurVal}em ${design.shadowColor}`);
       }
 
-      // 2. Glitch Shadows
       if (design.specialEffect === 'glitch') {
-          const offset = design.effectIntensity * 0.02; // Use relative unit (em)
+          const offset = design.effectIntensity * 0.02; 
           
           if (design.isRainbowGlitch) {
-               // Rainbow Spectrum ROYGBIV
-               const spread = offset * 1.5; // Increased spread factor
-               const colors = [
-                 '#FF0000', // Red
-                 '#FF7F00', // Orange
-                 '#FFFF00', // Yellow
-                 '#00FF00', // Green
-                 '#0000FF', // Blue
-                 '#4B0082', // Indigo
-                 '#9400D3'  // Violet
-               ];
-               const mid = Math.floor(colors.length / 2); // 3
+               const spread = offset * 1.5; 
+               const colors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
+               const mid = Math.floor(colors.length / 2); 
                const angleRad = (design.effectAngle * Math.PI) / 180;
                
                colors.forEach((c, i) => {
@@ -386,7 +389,6 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
                    shadows.push(`${dx}em ${dy}em 0px ${c}`);
                });
           } else {
-               // Standard Dual
                 const c1 = design.effectColor;
                 const c2 = design.effectColor2;
                 shadows.push(`${-offset}em 0px 0px ${c1}`);
@@ -394,7 +396,6 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
           }
       }
 
-      // 3. Echo Trails
       if (design.specialEffect === 'echo') {
           const dist = design.effectIntensity * 0.2;
           const angleRad = (design.effectAngle * Math.PI) / 180;
@@ -415,21 +416,19 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
 
   const specialStyles = getSpecialEffectStyles();
 
-  // Drag and Drop Handlers (Unchanged)
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(true);
+    e.preventDefault(); e.stopPropagation(); setIsDraggingFile(true);
   };
   const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
+    e.preventDefault(); e.stopPropagation(); setIsDraggingFile(false);
   };
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
+    e.preventDefault(); e.stopPropagation(); setIsDraggingFile(false);
     if (e.dataTransfer.files?.[0]?.type.startsWith('image/')) {
         onImageUpload(e.dataTransfer.files[0]);
     }
   };
 
-  // Empty State Ratio (Unchanged)
   const getEmptyStateRatio = () => {
     const [w, h] = design.aspectRatio.split(':').map(Number);
     let ratio = w / h;
@@ -449,87 +448,109 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         onChange={(e) => { if (e.target.files?.[0]) onImageUpload(e.target.files[0]); }}
     />
     <div 
-      ref={containerRef}
+      className="relative w-full h-full flex items-center justify-center overflow-hidden"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onWheel={handleWheel}
-      style={{
-         ...(!imageSrc ? getEmptyStateRatio() : {}),
-         transform: `scale(${zoomScale})`,
-         transformOrigin: 'center center'
-      }}
-      className={`
-        relative overflow-hidden shadow-2xl rounded-[3px] bg-neutral-900 
-        flex items-center justify-center select-none transition-all duration-100 ease-linear
-        ${!imageSrc ? 'w-full max-w-md' : 'w-auto h-auto max-w-full max-h-full'}
-        ${isDragging ? 'ring-2 ring-pink-500 bg-neutral-800' : ''}
-        ${className}
-      `}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={() => setIsPanning(false)}
+      style={{ cursor: isPanning ? 'grabbing' : (imageSrc ? 'grab' : 'default') }}
     >
-      {imageSrc ? (
-        <>
-          <img 
-            src={imageSrc} 
-            alt="Background" 
-            className="max-w-full max-h-full object-contain pointer-events-none"
-          />
-          
-          <div
-            className="absolute whitespace-pre-wrap leading-tight transition-all duration-200 ease-out origin-center"
-            style={{
-              left: `${design.overlayPosition.x}%`,
-              top: `${design.overlayPosition.y}%`,
-              transform: `
-                translate(-50%, -50%) 
-                rotate(${design.rotation}deg) 
-                scale(${design.flipX ? -1 : 1}, ${design.flipY ? -1 : 1})
-              `,
-              fontFamily: design.fontFamily,
-              fontSize: `${design.textSize * 0.8}vw`,
-              color: design.isHollow ? 'transparent' : design.textColor,
-              textAlign: design.textAlign,
-              // textShadow removed here, applied via specialStyles
-              filter: getFilterStyle(),
-              mixBlendMode: design.blendMode as any,
-              opacity: design.opacity,
-              width: '100%', 
-              pointerEvents: 'none',
-              fontWeight: design.isBold ? 'bold' : 'normal',
-              fontStyle: design.isItalic ? 'italic' : 'normal',
-              textTransform: design.isUppercase ? 'uppercase' : 'none',
-              WebkitTextStroke: getStrokeStyle(),
-              ...specialStyles, // Apply special effect overrides + shadows
-            }}
+      <div 
+        style={{
+           ...(!imageSrc ? getEmptyStateRatio() : {}),
+           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomScale})`,
+           transformOrigin: 'center center'
+        }}
+        className={`
+          relative overflow-hidden shadow-2xl rounded-[3px] bg-neutral-900 
+          flex items-center justify-center select-none transition-all duration-0 ease-linear
+          ${!imageSrc ? 'w-full max-w-md' : 'w-auto h-auto max-w-full max-h-full'}
+          ${isDraggingFile ? 'ring-2 ring-pink-500 bg-neutral-800' : ''}
+          ${className}
+        `}
+      >
+        {imageSrc ? (
+          <>
+            <img 
+              src={imageSrc} 
+              alt="Background" 
+              className="max-w-full max-h-full object-contain pointer-events-none"
+            />
+            
+            <div
+              className="absolute whitespace-pre-wrap leading-tight transition-all duration-200 ease-out origin-center"
+              style={{
+                left: `${design.overlayPosition.x}%`,
+                top: `${design.overlayPosition.y}%`,
+                transform: `
+                  translate(-50%, -50%) 
+                  rotate(${design.rotation}deg) 
+                  scale(${design.flipX ? -1 : 1}, ${design.flipY ? -1 : 1})
+                `,
+                fontFamily: design.fontFamily,
+                fontSize: `${design.textSize * 0.8}vw`,
+                letterSpacing: `${design.letterSpacing * 0.05}vw`, 
+                color: design.isHollow ? 'transparent' : design.textColor,
+                textAlign: design.textAlign,
+                filter: getFilterStyle(),
+                mixBlendMode: design.blendMode as any,
+                opacity: design.opacity,
+                width: '100%', 
+                pointerEvents: 'none',
+                fontWeight: design.isBold ? 'bold' : 'normal',
+                fontStyle: design.isItalic ? 'italic' : 'normal',
+                textTransform: design.isUppercase ? 'uppercase' : 'none',
+                WebkitTextStroke: getStrokeStyle(),
+                ...specialStyles, 
+              }}
+            >
+              {design.textOverlay}
+            </div>
+          </>
+        ) : (
+          <div 
+              onClick={() => fileInputRef.current?.click()}
+              className="text-neutral-600 flex flex-col items-center gap-4 cursor-pointer hover:text-neutral-400 transition-colors group p-8"
           >
-            {design.textOverlay}
+            <div className="relative">
+               <Upload className={`w-16 h-16 opacity-20 transition-transform duration-300 ${isDraggingFile ? 'scale-110 text-pink-500 opacity-50' : 'group-hover:-translate-y-1'}`} />
+            </div>
+            
+            <div className="font-mono text-sm opacity-50 group-hover:opacity-80 transition-opacity text-center">
+              {isDraggingFile ? 'Drop to Upload' : (
+                  <div className="flex flex-col items-center gap-1">
+                      <span>Drag and Drop Image here</span>
+                      <span className="text-xs opacity-50 my-1">or</span>
+                      <span>Click to Upload</span>
+                  </div>
+              )}
+            </div>
           </div>
-        </>
-      ) : (
-        <div 
-            onClick={() => fileInputRef.current?.click()}
-            className="text-neutral-600 flex flex-col items-center gap-4 cursor-pointer hover:text-neutral-400 transition-colors group p-8"
-        >
-          <div className="relative">
-             <Upload className={`w-16 h-16 opacity-20 transition-transform duration-300 ${isDragging ? 'scale-110 text-pink-500 opacity-50' : 'group-hover:-translate-y-1'}`} />
+        )}
+        
+        {imageSrc && (
+          <div className="absolute inset-0 pointer-events-none opacity-10 border-neutral-500">
+             <div className="w-full h-1/2 border-b border-dashed border-white/30 absolute top-0"></div>
+             <div className="h-full w-1/2 border-r border-dashed border-white/30 absolute left-0"></div>
           </div>
-          
-          <div className="font-mono text-sm opacity-50 group-hover:opacity-80 transition-opacity text-center">
-            {isDragging ? 'Drop to Upload' : (
-                <div className="flex flex-col items-center gap-1">
-                    <span>Drag and Drop Image here</span>
-                    <span className="text-xs opacity-50 my-1">or</span>
-                    <span>Click to Upload</span>
-                </div>
-            )}
-          </div>
-        </div>
-      )}
-      
-      {imageSrc && (
-        <div className="absolute inset-0 pointer-events-none opacity-10 border-neutral-500">
-           <div className="w-full h-1/2 border-b border-dashed border-white/30 absolute top-0"></div>
-           <div className="h-full w-1/2 border-r border-dashed border-white/30 absolute left-0"></div>
+        )}
+      </div>
+
+      {/* Info Widget - Outside scale transform */}
+      {imageSrc && imgDims && (
+        <div className="absolute bottom-4 right-4 z-50 bg-black/80 backdrop-blur text-neutral-300 text-[10px] font-medium px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-3 shadow-xl select-none pointer-events-none">
+            <span className="flex items-center gap-1">
+                <Maximize2 size={10} className="text-neutral-400" />
+                {imgDims.w} × {imgDims.h}
+            </span>
+            <span className="w-px h-3 bg-white/10"></span>
+            <span>{calculateAspectRatio(imgDims.w, imgDims.h)}</span>
+            <span className="w-px h-3 bg-white/10"></span>
+            <span>{((imgDims.w * imgDims.h) / 1000000).toFixed(1)} MP</span>
         </div>
       )}
     </div>

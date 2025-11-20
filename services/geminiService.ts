@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { AspectRatio } from "../types";
 
@@ -5,8 +6,8 @@ import { AspectRatio } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Generates the visual background using Imagen 4.0.
- * Supports explicit aspect ratios.
+ * Generates the visual background using Gemini 3 Pro Image Preview.
+ * Configured for 2K resolution (2048px).
  */
 export const generateBackgroundImage = async (prompt: string, aspectRatio: AspectRatio, orientation: 'landscape' | 'portrait' = 'landscape'): Promise<string> => {
   try {
@@ -21,29 +22,38 @@ export const generateBackgroundImage = async (prompt: string, aspectRatio: Aspec
     } else if (aspectRatio === '4:3') {
         targetRatio = orientation === 'portrait' ? '3:4' : '4:3';
     } else if (aspectRatio === '3:2') {
-        // 3:2 is not supported natively by Imagen 4 (only 1:1, 3:4, 4:3, 9:16, 16:9)
-        // Fallback to closest.
+        // 3:2 is not supported natively, mapping to closest (4:3/3:4)
         targetRatio = orientation === 'portrait' ? '3:4' : '4:3';
     } else {
-        // Fallback
         targetRatio = orientation === 'portrait' ? '3:4' : '4:3'; 
     }
 
-    const response = await ai.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt: `${prompt}. High quality, cinematic lighting, negative space for text overlay, polished design aesthetic.`,
+    // Using gemini-3-pro-image-preview allows for '2K' resolution request via imageConfig
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-image-preview',
+      contents: {
+        parts: [
+            { text: `${prompt}. High quality, cinematic lighting, negative space for text overlay, polished design aesthetic.` }
+        ]
+      },
       config: {
-        numberOfImages: 1,
-        aspectRatio: targetRatio,
-        outputMimeType: 'image/jpeg'
+        imageConfig: {
+            aspectRatio: targetRatio,
+            imageSize: '2K'
+        }
       },
     });
 
-    const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
-    if (imageBytes) {
-      return `data:image/jpeg;base64,${imageBytes}`;
+    // Parse response for image part
+    for (const candidate of response.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+            if (part.inlineData && part.inlineData.data) {
+                return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            }
+        }
     }
-    throw new Error("No image data received");
+    
+    throw new Error("No image data received from model");
   } catch (error) {
     console.error("Image generation failed:", error);
     throw error;
@@ -75,7 +85,7 @@ export const editImage = async (imageBase64: string, prompt: string): Promise<st
             },
           },
           {
-            text: `${prompt}. Maintain high quality and photorealism.`,
+            text: `${prompt}. Maintain high quality and photorealism. Output in high resolution.`,
           },
         ],
       },

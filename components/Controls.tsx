@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { DesignState, FontFamily, AspectRatio, SpecialEffect } from '../types';
 import { 
@@ -5,7 +6,7 @@ import {
   Bold, Italic, CaseUpper, FlipHorizontal, FlipVertical, 
   RotateCw, CircleDashed, Square, Settings, FilePlus,
   Ban, Compass, ToggleRight, ToggleLeft, Paintbrush,
-  Monitor, Smartphone
+  Monitor, Smartphone, AlignCenterHorizontal
 } from 'lucide-react';
 
 interface ControlsProps {
@@ -114,7 +115,7 @@ const Controls: React.FC<ControlsProps> = ({
             ///Textrot Studio
             </h2>
             <p className="text-xs text-neutral-400">
-            Visuals by Imagen 4.0.<br/>Typography by Gemini 2.5.
+            Visuals by Gemini 3 Pro.<br/>Typography by You.
             </p>
         </div>
         <button 
@@ -299,6 +300,24 @@ const Controls: React.FC<ControlsProps> = ({
                 >
                   <CaseUpper size={20} />
                 </button>
+            </div>
+
+            {/* Kerning / Letter Spacing */}
+            <div>
+                <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                        <AlignCenterHorizontal size={10} />
+                        Kerning
+                    </label>
+                    <span className="text-[10px] text-neutral-500">{design.letterSpacing}px</span>
+                </div>
+                <input 
+                    type="range" min="-10" max="50" step="1"
+                    value={design.letterSpacing}
+                    onChange={(e) => update('letterSpacing', parseFloat(e.target.value))}
+                    className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                    title="Letter Spacing"
+                />
             </div>
 
             {/* Colors */}
@@ -754,10 +773,10 @@ const Controls: React.FC<ControlsProps> = ({
         <button 
             onClick={onDownload}
             className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-[3px] font-medium flex items-center justify-center gap-2 transition-colors"
-            title="Download high-resolution image"
+            title="Save high-resolution image"
         >
             <Download size={16} />
-            Export HD Image
+            Save Image
         </button>
       </div>
     </div>
