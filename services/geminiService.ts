@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { AspectRatio } from "../types";
 
 // Initialize the client
@@ -13,18 +13,23 @@ export const generateBackgroundImage = async (prompt: string, aspectRatio: Aspec
   try {
     // Determine the API-compatible aspect ratio string
     // API supports: "1:1", "3:4", "4:3", "9:16", "16:9"
+    // We map our app's "Ratio + Orientation" state to these explicit API values.
     let targetRatio = '1:1';
     
     if (aspectRatio === '1:1') {
         targetRatio = '1:1';
     } else if (aspectRatio === '16:9') {
+        // 16:9 Landscape or 9:16 Portrait
         targetRatio = orientation === 'portrait' ? '9:16' : '16:9';
     } else if (aspectRatio === '4:3') {
+        // 4:3 Landscape or 3:4 Portrait
         targetRatio = orientation === 'portrait' ? '3:4' : '4:3';
     } else if (aspectRatio === '3:2') {
-        // 3:2 is not supported natively, mapping to closest (4:3/3:4)
+        // 3:2 is not natively supported by Gemini 3 Pro Image Preview. 
+        // We map it to the closest available ratio (4:3 / 3:4).
         targetRatio = orientation === 'portrait' ? '3:4' : '4:3';
     } else {
+        // Default fallback
         targetRatio = orientation === 'portrait' ? '3:4' : '4:3'; 
     }
 

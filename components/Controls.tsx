@@ -6,7 +6,7 @@ import {
   Bold, Italic, CaseUpper, FlipHorizontal, FlipVertical, 
   RotateCw, CircleDashed, Square, Settings, FilePlus,
   Ban, Compass, ToggleRight, ToggleLeft, Paintbrush,
-  Monitor, Smartphone, AlignCenterHorizontal
+  Monitor, Smartphone, AlignCenterHorizontal, PenTool, Trash2, Route
 } from 'lucide-react';
 
 interface ControlsProps {
@@ -103,6 +103,19 @@ const Controls: React.FC<ControlsProps> = ({
           return `${h}:${w}`;
       }
       return ratio;
+  };
+
+  const handleClearPath = () => {
+      setDesign(prev => ({ ...prev, pathPoints: [] }));
+  };
+
+  const handleTogglePathMode = () => {
+      // If currently drawing, stop. If not, start.
+      setDesign(prev => ({ 
+          ...prev, 
+          isPathInputMode: !prev.isPathInputMode,
+          // If we enter mode, we don't clear path immediately, user might want to redraw
+      }));
   };
 
   return (
@@ -238,6 +251,41 @@ const Controls: React.FC<ControlsProps> = ({
                   <FilePlus size={18} />
               </button>
           </div>
+        </div>
+
+        {/* Path Tool */}
+        <div className="p-6 border-b border-neutral-800 space-y-3">
+            <div className="flex items-center gap-2 text-neutral-300">
+              <Route size={16} />
+              <span className="text-sm font-medium">Path Tool</span>
+            </div>
+            
+            <div className="flex gap-2">
+                <button 
+                    onClick={handleTogglePathMode}
+                    className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
+                        design.isPathInputMode 
+                        ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
+                        : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900'
+                    }`}
+                >
+                    <PenTool size={14} />
+                    {design.isPathInputMode ? 'Drawing Active' : 'Draw Curve'}
+                </button>
+
+                {design.pathPoints.length > 0 && (
+                     <button 
+                        onClick={handleClearPath}
+                        className="w-10 flex items-center justify-center rounded-[3px] bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+                        title="Clear Path (Revert to straight text)"
+                     >
+                         <Trash2 size={14} />
+                     </button>
+                )}
+            </div>
+            {design.isPathInputMode && (
+                <p className="text-[10px] text-neutral-500">Click and drag on the image to draw a path.</p>
+            )}
         </div>
 
         {/* Typography Controls */}
@@ -377,20 +425,6 @@ const Controls: React.FC<ControlsProps> = ({
                           type="range" min="0" max="1" step="0.05"
                           value={design.opacity}
                           onChange={(e) => update('opacity', parseFloat(e.target.value))}
-                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      />
-                  </div>
-
-                  {/* Text Blur */}
-                  <div>
-                      <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
-                          <span>Text Blur</span>
-                          <span>{design.textBlur}px</span>
-                      </label>
-                      <input 
-                          type="range" min="0" max="20" step="0.5"
-                          value={design.textBlur}
-                          onChange={(e) => update('textBlur', parseFloat(e.target.value))}
                           className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
                       />
                   </div>

@@ -58,6 +58,11 @@ export type AspectRatio = '1:1' | '4:3' | '3:2' | '16:9';
 export type Orientation = 'landscape' | 'portrait';
 export type SpecialEffect = 'none' | 'glitch' | 'gradient' | 'echo';
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface DesignState {
   prompt: string;
   aspectRatio: AspectRatio;
@@ -74,8 +79,11 @@ export interface DesignState {
   blendMode: 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity';
   opacity: number;
   
-  // New Blur Controls
-  textBlur: number;
+  // Path / Curve Data
+  pathPoints: Point[]; // Array of coordinates relative to the image dimensions
+  isPathInputMode: boolean; // If true, user is drawing on canvas instead of panning
+
+  // Shadow Controls
   shadowBlur: number;
   hasShadow: boolean;
   shadowOffset: number; // 0-100

@@ -4,7 +4,7 @@ import Canvas, { CanvasHandle } from './components/Canvas';
 import Controls from './components/Controls';
 import SettingsModal from './components/SettingsModal';
 import ConfirmationModal from './components/ConfirmationModal';
-import { DesignState, AppSettings, AspectRatio, Orientation } from './types';
+import { DesignState, AppSettings, AspectRatio, Orientation, Point } from './types';
 import { generateBackgroundImage, editImage } from './services/geminiService';
 
 // Initial State
@@ -22,8 +22,12 @@ const DEFAULT_DESIGN: DesignState = {
   overlayPosition: { x: 50, y: 50 },
   blendMode: 'normal',
   opacity: 1,
+  
+  // Path
+  pathPoints: [],
+  isPathInputMode: false,
+
   // Blurs
-  textBlur: 0,
   shadowBlur: 20,
   hasShadow: true,
   shadowOffset: 20,
@@ -87,6 +91,8 @@ export default function App() {
             rotation: 0,
             flipX: false,
             flipY: false,
+            pathPoints: [], // Clear path on new gen
+            isPathInputMode: false,
             textOverlay: isDefaultText ? design.prompt.substring(0, 20).toUpperCase() : prev.textOverlay
         };
       });
@@ -125,32 +131,37 @@ export default function App() {
   const executeBlankCanvas = () => {
     const canvas = document.createElement('canvas');
     
-    // Explicit hardcoded lookups to guarantee correct aspect ratio dimensions
-    // BASE = 2048px (2K Resolution)
-    const ratioKey = design.aspectRatio;
-    const isPortrait = design.orientation === 'portrait';
-    
+    // Use standard "2K" / 1440p class resolutions for best balance of quality and performance.
+    // No "weird math" or approximations, just standard industry resolutions.
     let width = 2048;
     let height = 2048;
 
-    if (isPortrait) {
-        // Portrait Mode: Width fixed at 2048, Height scales up
-        width = 2048;
-        switch (ratioKey) {
-            case '1:1': height = 2048; break;
-            case '4:3': height = 2730; break; // 4:3 inverted is 3:4 (approx)
-            case '3:2': height = 3072; break; // 3:2 inverted is 2:3
-            case '16:9': height = 3640; break; // 16:9 inverted is 9:16
-        }
-    } else {
-        // Landscape Mode: Height fixed at 2048, Width scales up
-        height = 2048;
-        switch (ratioKey) {
-            case '1:1': width = 2048; break;
-            case '4:3': width = 2730; break;
-            case '3:2': width = 3072; break;
-            case '16:9': width = 3640; break;
-        }
+    const ratio = design.aspectRatio;
+    const isPortrait = design.orientation === 'portrait';
+
+    // Establish Base Dimensions (Landscape defaults)
+    switch (ratio) {
+        case '1:1':
+            width = 2048; height = 2048;
+            break;
+        case '4:3':
+            width = 2048; height = 1536; 
+            break;
+        case '3:2':
+            width = 2160; height = 1440; 
+            break;
+        case '16:9':
+            width = 2560; height = 1440; // Standard QHD Landscape
+            break;
+        default:
+            width = 2048; height = 2048;
+    }
+
+    // Swap dimensions if Portrait (and not square) to ensure true portrait orientation
+    if (isPortrait && ratio !== '1:1') {
+        const temp = width;
+        width = height;
+        height = temp;
     }
 
     canvas.width = width;
@@ -167,6 +178,8 @@ export default function App() {
         shadowColor: '#000000',
         isHollow: false,
         blendMode: 'normal',
+        pathPoints: [],
+        isPathInputMode: false,
         textOverlay: 'BLANK CANVAS'
     }));
     setIsBlankConfirmOpen(false);
@@ -229,7 +242,9 @@ export default function App() {
             setDesign(prev => ({
                 ...prev,
                 aspectRatio: closestRatio,
-                orientation: newOrientation
+                orientation: newOrientation,
+                pathPoints: [],
+                isPathInputMode: false
             }));
             setImageSrc(result);
         };
@@ -243,15 +258,36 @@ export default function App() {
     if (canvasRef.current) {
       try {
         const dataUrl = await canvasRef.current.exportImage();
+        
+        // Convert Base64 to Blob for better large file handling
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+
         const link = document.createElement('a');
         link.download = `textrot-${Date.now()}.png`;
-        link.href = dataUrl;
+        link.href = url;
+        
+        // Append to body to ensure click works in all browsers (Firefox)
+        document.body.appendChild(link);
         link.click();
+        
+        // Cleanup
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
       } catch (e) {
         console.error("Export failed", e);
         alert("Could not export image.");
       }
     }
+  };
+
+  const handlePathDrawn = (points: Point[]) => {
+    setDesign(prev => ({
+        ...prev,
+        pathPoints: points,
+        isPathInputMode: false // Auto-exit drawing mode after one stroke
+    }));
   };
 
   return (
@@ -264,6 +300,7 @@ export default function App() {
             design={design} 
             enableZoom={settings.enableZoom}
             onImageUpload={handleImageUpload}
+            onPathDrawn={handlePathDrawn}
             className="shadow-2xl ring-1 ring-white/10"
         />
       </div>

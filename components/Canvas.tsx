@@ -1,7 +1,7 @@
 
-import React, { useRef, useState, forwardRef, useImperativeHandle, useEffect } from 'react';
-import { DesignState } from '../types';
-import { Upload, Maximize2 } from 'lucide-react';
+import React, { useRef, useState, forwardRef, useImperativeHandle, useEffect, useCallback } from 'react';
+import { DesignState, Point } from '../types';
+import { Upload, Maximize2, PenTool } from 'lucide-react';
 
 interface CanvasProps {
   imageSrc: string | null;
@@ -9,29 +9,67 @@ interface CanvasProps {
   enableZoom: boolean;
   className?: string;
   onImageUpload: (file: File) => void;
+  onPathDrawn: (points: Point[]) => void;
 }
 
 export interface CanvasHandle {
   exportImage: () => Promise<string>;
 }
 
-const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enableZoom, className, onImageUpload }, ref) => {
+// Helper: Hex to RGB
+const hexToRgb = (hex: string) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : { r: 0, g: 0, b: 0 };
+};
+
+// Helper: Interpolate Colors
+const interpolateColor = (c1: string, c2: string, t: number) => {
+    const rgb1 = hexToRgb(c1);
+    const rgb2 = hexToRgb(c2);
+    const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * t);
+    const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * t);
+    const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * t);
+    return `rgb(${r},${g},${b})`;
+};
+
+const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enableZoom, className, onImageUpload, onPathDrawn }, ref) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [zoomScale, setZoomScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  
+  // Interaction States
   const [isPanning, setIsPanning] = useState(false);
+  const [isDrawingPath, setIsDrawingPath] = useState(false);
+  
   const dragStartRef = useRef({ x: 0, y: 0 });
+  const currentPathRef = useRef<Point[]>([]);
+  
   const [imgDims, setImgDims] = useState<{ w: number, h: number } | null>(null);
 
   // Reset zoom and get dims when the image changes
   useEffect(() => {
     setZoomScale(1);
     setPan({ x: 0, y: 0 });
+    
+    // Critical Fix: Clear dimensions immediately. 
+    // This prevents the canvas from rendering with stale dimensions (e.g. 1:1) 
+    // while the new image (e.g. 9:16) is loading, which causes visual distortion.
+    setImgDims(null);
+
     if (imageSrc) {
         const i = new Image();
         i.onload = () => {
             setImgDims({ w: i.naturalWidth, h: i.naturalHeight });
+        };
+        i.onerror = () => {
+            console.error("Failed to load image dimensions");
+            setImgDims(null); 
         };
         i.src = imageSrc;
     } else {
@@ -49,12 +87,46 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     setZoomScale(newScale);
   };
 
-  // Panning Handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-      if (!imageSrc || !enableZoom) return;
+  // Helper to map screen event coordinates to Intrinsic Image Coordinates
+  const getIntrinsicCoordinates = (e: React.MouseEvent) => {
+      const contentDiv = e.currentTarget.querySelector('.canvas-content') as HTMLElement;
+      if (!contentDiv || !imgDims) return null;
       
-      // Left click only
-      if (e.button === 0) {
+      // getBoundingClientRect returns the dimensions *including* transform (scale)
+      const rect = contentDiv.getBoundingClientRect();
+      
+      if (rect.width === 0 || rect.height === 0) return null;
+
+      // 1. Calculate relative position within the visible box (0 to 1)
+      const relX = (e.clientX - rect.left) / rect.width;
+      const relY = (e.clientY - rect.top) / rect.height;
+
+      // 2. Map to intrinsic image dimensions
+      return {
+          x: relX * imgDims.w,
+          y: relY * imgDims.h
+      };
+  };
+
+  // --- Interaction Handlers ---
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+      if (!imageSrc) return;
+
+      // Mode: Drawing Path
+      if (design.isPathInputMode) {
+          e.preventDefault();
+          
+          const coords = getIntrinsicCoordinates(e);
+          if (!coords) return;
+
+          setIsDrawingPath(true);
+          currentPathRef.current = [coords];
+          return;
+      }
+
+      // Mode: Panning (Left Click)
+      if (enableZoom && e.button === 0) {
           setIsPanning(true);
           dragStartRef.current = {
               x: e.clientX - pan.x,
@@ -65,6 +137,19 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+      // Drawing
+      if (isDrawingPath) {
+          const coords = getIntrinsicCoordinates(e);
+          if (!coords) return;
+          
+          currentPathRef.current.push(coords);
+          
+          // Live render the path line
+          renderToContext(textCanvasRef.current?.getContext('2d') || null, imgDims?.w || 0, imgDims?.h || 0, true);
+          return;
+      }
+
+      // Panning
       if (isPanning) {
           e.preventDefault();
           setPan({
@@ -75,6 +160,12 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   };
 
   const handleMouseUp = () => {
+      if (isDrawingPath) {
+          setIsDrawingPath(false);
+          // Simplify path slightly to reduce jitter?
+          onPathDrawn(currentPathRef.current);
+          currentPathRef.current = [];
+      }
       setIsPanning(false);
   };
 
@@ -95,186 +186,307 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     return `${width / divisor}:${height / divisor}`;
   };
 
-  // Function to perform the actual canvas drawing for export
-  const generateExport = async (): Promise<string> => {
-    if (!imageSrc) throw new Error("No image to export");
 
-    // Wait for fonts to be ready to ensure correct rendering
-    await document.fonts.ready;
+  // --- Core Rendering Logic (Shared between Preview and Export) ---
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error("Could not get canvas context");
+  const renderToContext = useCallback((
+      ctx: CanvasRenderingContext2D | null, 
+      width: number, 
+      height: number,
+      isPreview: boolean = false
+  ) => {
+    if (!ctx) return;
 
-    const img = new Image();
-    // Ensure correct loading sequence
-    await new Promise((resolve, reject) => { 
-        img.onload = resolve; 
-        img.onerror = reject;
-        img.src = imageSrc; 
-    });
+    // Reset Context State
+    ctx.clearRect(0, 0, width, height);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1.0;
+    ctx.globalCompositeOperation = 'source-over';
 
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    // If just drawing the line during interaction (ONLY IN PREVIEW)
+    if (isPreview && isDrawingPath && currentPathRef.current.length > 1) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ec4899'; // Pink-500
+        // Scale line width based on image resolution so it's visible
+        ctx.lineWidth = Math.max(2, width * 0.005); 
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        ctx.moveTo(currentPathRef.current[0].x, currentPathRef.current[0].y);
+        for(const p of currentPathRef.current) {
+            ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+        return; 
+    }
 
-    ctx.drawImage(img, 0, 0);
-
-    const fontSize = (design.textSize / 100) * canvas.width;
+    // Setup Font
+    const fontSize = (design.textSize / 100) * width;
     const fontWeight = design.isBold ? 'bold' : 'normal';
     const fontStyle = design.isItalic ? 'italic' : 'normal';
     
     ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${design.fontFamily}"`;
     ctx.textAlign = design.textAlign;
     ctx.textBaseline = 'middle';
-    
-    const scaledLetterSpacing = design.letterSpacing * (fontSize / 50); 
-    if ('letterSpacing' in ctx) {
-      // @ts-ignore
-      ctx.letterSpacing = `${scaledLetterSpacing}px`;
-    }
 
+    // Helper for Letter Spacing
+    const scaledLetterSpacing = design.letterSpacing * (fontSize / 50); 
+
+    // Text & Content
     const rawText = design.isUppercase ? design.textOverlay.toUpperCase() : design.textOverlay;
     const lines = rawText.split('\n');
     const lineHeight = fontSize * 1.2;
     const totalHeight = lines.length * lineHeight;
-    
+
+    // Measure Max Width for Gradient Calculation (Updated for Kerning)
     let maxLineWidth = 0;
     lines.forEach(line => {
-        const metrics = ctx.measureText(line);
-        if (metrics.width > maxLineWidth) maxLineWidth = metrics.width;
+        const chars = line.split('');
+        // Total width = sum of chars + total spacing
+        const w = chars.reduce((sum, c) => sum + ctx.measureText(c).width, 0) + Math.max(0, (chars.length - 1) * scaledLetterSpacing);
+        if (w > maxLineWidth) maxLineWidth = w;
     });
 
-    let fillStyle: string | CanvasGradient = design.textColor;
+    // Colors & Gradients (Prepare for Normal Mode)
+    let normalModeFillStyle: string | CanvasGradient = design.textColor;
+    
     if (design.specialEffect === 'gradient' && !design.isHollow) {
-        const angleRad = (design.effectAngle * Math.PI) / 180;
+        // Gradient relative to the text block center (0,0)
         const r = Math.sqrt((maxLineWidth/2)**2 + (totalHeight/2)**2);
+        const angleRad = (design.effectAngle * Math.PI) / 180;
         
+        // Calculate gradient vector centered at 0,0
         const x1 = -Math.cos(angleRad) * r;
         const y1 = -Math.sin(angleRad) * r;
         const x2 = Math.cos(angleRad) * r;
         const y2 = Math.sin(angleRad) * r;
 
         const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-        
         const halfSpread = design.effectIntensity / 2; 
         const stop1 = Math.max(0, Math.min(1, (50 - halfSpread) / 100));
         const stop2 = Math.max(0, Math.min(1, (50 + halfSpread) / 100));
 
         grad.addColorStop(stop1, design.textColor);
         grad.addColorStop(stop2, design.effectColor);
-        fillStyle = grad;
+        normalModeFillStyle = grad;
     }
 
-    const x = (design.overlayPosition.x / 100) * canvas.width;
-    const y = (design.overlayPosition.y / 100) * canvas.height;
-
-    ctx.save();
-    ctx.translate(x, y);
+    // --- DRAWING HELPER: Text-On-Path vs Normal ---
     
-    if (design.rotation !== 0) {
-        ctx.rotate((design.rotation * Math.PI) / 180);
-    }
+    const drawTextItem = (text: string, offsetX: number, offsetY: number, colorOverride?: string, forceHollow?: boolean) => {
+        // Determine if we are drawing hollow or filled for this specific pass
+        const isHollow = forceHollow !== undefined ? forceHollow : design.isHollow;
+        
+        ctx.save();
 
-    const scaleX = design.flipX ? -1 : 1;
-    const scaleY = design.flipY ? -1 : 1;
-    if (scaleX !== 1 || scaleY !== 1) {
-        ctx.scale(scaleX, scaleY);
-    }
-
-    ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
-    ctx.globalAlpha = design.opacity;
-
-    if (design.textBlur > 0) {
-        ctx.filter = `blur(${design.textBlur}px)`;
-    }
-
-    // Fix alignment logic: Adjust X position based on textAlign to match DOM Rendering
-    // DOM uses a 100% width container centered on the point.
-    let xAlignmentOffset = 0;
-    if (design.textAlign === 'left') xAlignmentOffset = -canvas.width / 2;
-    if (design.textAlign === 'right') xAlignmentOffset = canvas.width / 2;
-
-    const drawShadowPass = () => {
-         if (!design.hasShadow) return;
-
-         ctx.shadowColor = design.shadowColor;
-         ctx.shadowBlur = (design.shadowBlur / 100) * (fontSize * 2); 
-         
-         const shadowRad = (design.shadowAngle * Math.PI) / 180;
-         const shadowDist = (design.shadowOffset / 100) * fontSize; 
-
-         ctx.shadowOffsetX = Math.cos(shadowRad) * shadowDist;
-         ctx.shadowOffsetY = Math.sin(shadowRad) * shadowDist;
-         
-         const startY = -(totalHeight / 2) + (lineHeight / 2);
-         
-         lines.forEach((line, index) => {
-            const lineY = startY + (index * lineHeight);
-            if (design.isHollow || design.hasOutline) {
-                ctx.lineWidth = design.hasOutline ? design.outlineWidth : 2;
-                ctx.strokeStyle = design.hasOutline ? design.outlineColor : design.textColor;
-                ctx.strokeText(line, xAlignmentOffset, lineY);
-            } else {
-                ctx.fillStyle = design.textColor; 
-                ctx.fillText(line, xAlignmentOffset, lineY);
+        // --- PATH MODE ---
+        if (design.pathPoints && design.pathPoints.length > 1) {
+            // Logic for drawing text along the pathPoints
+            const path = design.pathPoints;
+            const distances = [0];
+            for (let i = 1; i < path.length; i++) {
+                const dx = path[i].x - path[i-1].x;
+                const dy = path[i].y - path[i-1].y;
+                distances.push(distances[i-1] + Math.sqrt(dx*dx + dy*dy));
             }
-         });
-         
-         ctx.shadowColor = 'transparent';
-         ctx.shadowBlur = 0;
-         ctx.shadowOffsetX = 0;
-         ctx.shadowOffsetY = 0;
-    };
+            const totalPathLen = distances[distances.length - 1];
 
-    const drawTextPass = (xOffset: number, yOffset: number, colorOverride?: string, isStroke?: boolean) => {
-        const startY = -(totalHeight / 2) + (lineHeight / 2);
-        lines.forEach((line, index) => {
-            const lineY = startY + (index * lineHeight) + yOffset;
-            const finalX = xOffset + xAlignmentOffset;
+            // Measure Text
+            let totalTextWidth = 0;
+            for (const char of text) {
+                totalTextWidth += ctx.measureText(char).width + scaledLetterSpacing;
+            }
 
-            if (isStroke || design.isHollow) {
-                ctx.lineWidth = design.hasOutline ? design.outlineWidth : 2; 
-                ctx.strokeStyle = colorOverride || (design.hasOutline ? design.outlineColor : design.textColor);
-                ctx.strokeText(line, finalX, lineY);
-            } else {
-                ctx.fillStyle = colorOverride || fillStyle;
-                ctx.fillText(line, finalX, lineY);
-                
-                if (design.hasOutline) {
-                    ctx.lineWidth = design.outlineWidth;
-                    ctx.strokeStyle = design.outlineColor;
-                    ctx.strokeText(line, finalX, lineY);
+            // Start Position
+            let currentDist = 0;
+            if (design.textAlign === 'center') currentDist = (totalPathLen - totalTextWidth) / 2;
+            if (design.textAlign === 'right') currentDist = totalPathLen - totalTextWidth;
+            
+            currentDist += offsetX;
+            const normalOffset = offsetY;
+
+            // Render Chars
+            for (const char of text) {
+                const charWidth = ctx.measureText(char).width;
+                const charMidDist = currentDist + (charWidth / 2);
+
+                if (charMidDist >= 0 && charMidDist <= totalPathLen) {
+                    // Find segment
+                    let idx = 0;
+                    while (distances[idx + 1] < charMidDist && idx < distances.length - 2) {
+                        idx++;
+                    }
+                    
+                    // Interpolate Position
+                    const p1 = path[idx];
+                    const p2 = path[idx+1];
+                    const segStart = distances[idx];
+                    const segLen = distances[idx+1] - segStart;
+                    const t = (charMidDist - segStart) / (segLen || 1); 
+
+                    const xBase = p1.x + (p2.x - p1.x) * t;
+                    const yBase = p1.y + (p2.y - p1.y) * t;
+                    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+
+                    // Apply Normal Offset
+                    const xFinal = xBase + Math.sin(angle) * normalOffset; 
+                    const yFinal = yBase - Math.cos(angle) * normalOffset; 
+
+                    ctx.translate(xFinal, yFinal);
+                    ctx.rotate(angle);
+                    
+                    // Determine Color for Path Mode
+                    let activeFill = colorOverride || design.textColor;
+                    
+                    // Path Mode Gradient Implementation (Interpolation)
+                    if (!colorOverride && design.specialEffect === 'gradient' && !isHollow) {
+                        const gradT = Math.max(0, Math.min(1, charMidDist / totalPathLen));
+                        activeFill = interpolateColor(design.textColor, design.effectColor, gradT);
+                    }
+
+                    // Draw
+                    if (isHollow) {
+                         ctx.lineWidth = design.hasOutline ? design.outlineWidth : 2; 
+                         ctx.strokeStyle = colorOverride || (design.hasOutline ? design.outlineColor : design.textColor);
+                         ctx.strokeText(char, 0, 0);
+                    } else {
+                         ctx.fillStyle = activeFill;
+                         ctx.fillText(char, 0, 0);
+                         
+                         if (design.hasOutline) {
+                             ctx.lineWidth = design.outlineWidth;
+                             ctx.strokeStyle = design.outlineColor;
+                             ctx.strokeText(char, 0, 0);
+                         }
+                    }
+
+                    ctx.rotate(-angle);
+                    ctx.translate(-xFinal, -yFinal);
                 }
+                currentDist += charWidth + scaledLetterSpacing;
             }
-        });
+
+        } 
+        // --- NORMAL MODE (Updated for Kerning) ---
+        else {
+            const xPos = (design.overlayPosition.x / 100) * width;
+            const yPos = (design.overlayPosition.y / 100) * height;
+            
+            ctx.translate(xPos, yPos);
+            
+            // Transforms
+            if (design.rotation !== 0) ctx.rotate((design.rotation * Math.PI) / 180);
+            const sX = design.flipX ? -1 : 1;
+            const sY = design.flipY ? -1 : 1;
+            if (sX !== 1 || sY !== 1) ctx.scale(sX, sY);
+
+            // Alignment Offset
+            const startY = -(totalHeight / 2) + (lineHeight / 2);
+
+            lines.forEach((line, i) => {
+                const lineY = startY + (i * lineHeight) + offsetY;
+                
+                // Manual Kerning / Placement Loop
+                const chars = line.split('');
+                // Calculate total line width (chars + spacing)
+                const charWidths = chars.map(c => ctx.measureText(c).width);
+                const totalLineWidth = charWidths.reduce((a, b) => a + b, 0) + (Math.max(0, chars.length - 1) * scaledLetterSpacing);
+                
+                let cursorX = offsetX;
+                
+                // Align the line relative to the insertion point (0,0 local)
+                if (design.textAlign === 'center') {
+                    cursorX -= totalLineWidth / 2;
+                } else if (design.textAlign === 'right') {
+                    cursorX -= totalLineWidth;
+                }
+                // Left align stays at 0
+
+                // Important: Reset alignment to Left for character-by-character drawing
+                ctx.textAlign = 'left';
+
+                chars.forEach((char, idx) => {
+                    if (isHollow) {
+                        ctx.lineWidth = design.hasOutline ? design.outlineWidth : 2; 
+                        ctx.strokeStyle = colorOverride || (design.hasOutline ? design.outlineColor : design.textColor);
+                        ctx.strokeText(char, cursorX, lineY);
+                    } else {
+                        ctx.fillStyle = colorOverride || normalModeFillStyle;
+                        ctx.fillText(char, cursorX, lineY);
+                        
+                        if (design.hasOutline) {
+                            ctx.lineWidth = design.outlineWidth;
+                            ctx.strokeStyle = design.outlineColor;
+                            ctx.strokeText(char, cursorX, lineY);
+                        }
+                    }
+                    cursorX += charWidths[idx] + scaledLetterSpacing;
+                });
+            });
+
+            // Undo Transforms
+            if (sX !== 1 || sY !== 1) ctx.scale(sX, sY);
+            if (design.rotation !== 0) ctx.rotate(-(design.rotation * Math.PI) / 180);
+            ctx.translate(-xPos, -yPos);
+        }
+
+        ctx.restore();
     };
 
+
+    // --- EFFECTS PIPELINE ---
+
+    // 1. Shadow Pass
+    if (design.hasShadow) {
+        ctx.save();
+        ctx.globalAlpha = design.opacity; // Shadow should respect main opacity
+        ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
+
+        ctx.shadowColor = design.shadowColor;
+        ctx.shadowBlur = (design.shadowBlur / 100) * (fontSize * 2);
+        
+        const shadowRad = (design.shadowAngle * Math.PI) / 180;
+        const shadowDist = (design.shadowOffset / 100) * fontSize;
+        const sx = Math.cos(shadowRad) * shadowDist;
+        const sy = Math.sin(shadowRad) * shadowDist;
+        
+        const OFFSET_HACK = 20000; // Move off-screen
+        ctx.translate(-OFFSET_HACK, 0);
+        ctx.shadowOffsetX = sx + OFFSET_HACK;
+        ctx.shadowOffsetY = sy;
+        
+        // Draw the "caster" offscreen
+        drawTextItem(rawText, 0, 0, design.isHollow ? undefined : design.textColor, design.isHollow);
+        ctx.restore();
+    }
+
+    // 2. Special Effects (Echo / Glitch)
     if (design.specialEffect === 'echo') {
         const echoCount = 5;
         const startOpacity = design.opacity;
         const angleRad = (design.effectAngle * Math.PI) / 180;
-        const distanceStep = design.effectIntensity * (canvas.width * 0.0005); 
+        const distanceStep = design.effectIntensity * (width * 0.0005); 
 
+        ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
+        
         for (let i = echoCount; i > 0; i--) {
              const dx = Math.cos(angleRad) * distanceStep * i;
              const dy = Math.sin(angleRad) * distanceStep * i;
 
              ctx.globalAlpha = startOpacity * (0.1 + (0.5 * (1 - i/echoCount))); 
-             drawTextPass(dx, dy, undefined, design.isHollow);
+             drawTextItem(rawText, dx, dy, undefined, design.isHollow);
         }
-        ctx.globalAlpha = design.opacity;
     }
 
     if (design.specialEffect === 'glitch') {
-        const offset = (design.effectIntensity / 100) * (fontSize * 1.5);
-        ctx.save();
-        
+        const offset = (design.effectIntensity / 100) * (fontSize * 0.5);
+        const angleRad = (design.effectAngle * Math.PI) / 180;
+
         if (design.isRainbowGlitch) {
              const colors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
              const spread = offset * 1.2; 
-             const angleRad = (design.effectAngle * Math.PI) / 180;
              
-             ctx.globalAlpha = design.opacity * 0.5;
+             ctx.globalAlpha = 0.5; // Semi-transparent for rainbow stack
              ctx.globalCompositeOperation = 'screen';
 
              colors.forEach((c, i) => {
@@ -282,139 +494,95 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
                  const dist = (i - mid) * spread;
                  const dx = Math.cos(angleRad) * dist;
                  const dy = Math.sin(angleRad) * dist;
-                 drawTextPass(dx, dy, c, design.isHollow);
+                 drawTextItem(rawText, dx, dy, c, false);
              });
 
         } else {
             const c1 = design.effectColor;
             const c2 = design.effectColor2;
             
-            ctx.globalAlpha = design.opacity * 0.8;
+            // Layer 1 - Full Brightness & Glow
+            ctx.save();
+            ctx.globalAlpha = 1.0; 
             ctx.globalCompositeOperation = 'screen'; 
-            drawTextPass(-offset, 0, c1, design.isHollow);
+            ctx.shadowColor = c1;
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+            drawTextItem(rawText, -offset, 0, c1, false);
+            ctx.restore();
 
-            ctx.globalAlpha = design.opacity * 0.8;
-            drawTextPass(offset, 0, c2, design.isHollow); 
+            // Layer 2 - Full Brightness & Glow
+            ctx.save();
+            ctx.globalAlpha = 1.0; 
+            ctx.globalCompositeOperation = 'screen';
+            ctx.shadowColor = c2;
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+            drawTextItem(rawText, offset, 0, c2, false); 
+            ctx.restore();
         }
-        
-        ctx.restore();
     }
 
-    drawShadowPass();
+    // 3. Main Text Pass
+    ctx.save(); // Save state before applying main text specific props
+    
+    ctx.globalAlpha = design.opacity;
+    ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
+    
+    drawTextItem(rawText, 0, 0, undefined, undefined); // Use defaults
+    
+    ctx.restore(); // Restore cleanup
 
-    drawTextPass(0, 0, undefined, design.isHollow);
+  }, [design, isDrawingPath]);
 
-    ctx.restore();
-    ctx.filter = 'none'; 
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
+  // --- Live Preview Renderer ---
+  useEffect(() => {
+      if (textCanvasRef.current && imgDims) {
+          const ctx = textCanvasRef.current.getContext('2d');
+          // Sync canvas size to image size
+          textCanvasRef.current.width = imgDims.w;
+          textCanvasRef.current.height = imgDims.h;
+          
+          renderToContext(ctx, imgDims.w, imgDims.h, true);
+      }
+  }, [imgDims, design, renderToContext, isDrawingPath]);
+
+
+  // --- Export Logic ---
+  const generateExport = useCallback(async (): Promise<string> => {
+    if (!imageSrc) throw new Error("No image to export");
+    await document.fonts.ready;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error("Could not get canvas context");
+
+    const img = new Image();
+    await new Promise((resolve, reject) => { 
+        img.onload = resolve; 
+        img.onerror = reject;
+        img.src = imageSrc; 
+    });
+
+    // Avoid drawing UI helpers on export
+    const noUiDesign = { ...design, isPathInputMode: false }; 
+    // We can modify renderToContext to accept a flag or just pass false for isPreview
+
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+
+    // 1. Draw Background
+    ctx.drawImage(img, 0, 0);
+
+    // 2. Draw Visuals using shared logic
+    renderToContext(ctx, canvas.width, canvas.height, false);
 
     return canvas.toDataURL('image/png');
-  };
+  }, [imageSrc, renderToContext]);
 
   useImperativeHandle(ref, () => ({
     exportImage: generateExport
-  }));
-
-  const getStrokeStyle = () => {
-    if (design.isHollow) {
-       const width = design.hasOutline ? design.outlineWidth : 1; 
-       const color = design.hasOutline ? design.outlineColor : design.textColor;
-       return `${width}px ${color}`;
-    }
-    if (design.hasOutline) {
-       return `${design.outlineWidth}px ${design.outlineColor}`;
-    }
-    return '0';
-  };
-
-  const getFilterStyle = () => {
-    let filters = [];
-    if (design.hasShadow && (design.isHollow || design.hasOutline)) {
-         const blurVal = (design.shadowBlur / 100) * 0.5; 
-         const shadowRad = (design.shadowAngle * Math.PI) / 180;
-         const shadowDist = design.shadowOffset * 0.005; 
-         const sx = Math.cos(shadowRad) * shadowDist;
-         const sy = Math.sin(shadowRad) * shadowDist;
-         
-         filters.push(`drop-shadow(${sx}em ${sy}em ${blurVal}em ${design.shadowColor})`);
-    }
-
-    if (design.textBlur > 0) {
-        filters.push(`blur(${design.textBlur}px)`);
-    }
-
-    return filters.join(' ');
-  };
-
-  const getSpecialEffectStyles = (): React.CSSProperties => {
-      const styles: React.CSSProperties = {};
-
-      if (design.specialEffect === 'gradient' && !design.isHollow) {
-          const halfSpread = design.effectIntensity / 2;
-          const stop1 = 50 - halfSpread;
-          const stop2 = 50 + halfSpread;
-          
-          styles.backgroundImage = `linear-gradient(${design.effectAngle}deg, ${design.textColor} ${stop1}%, ${design.effectColor} ${stop2}%)`;
-          styles.backgroundClip = 'text';
-          styles.WebkitBackgroundClip = 'text';
-          styles.color = 'transparent'; 
-      }
-
-      const shadows: string[] = [];
-
-      if (design.hasShadow && !design.isHollow && !design.hasOutline) {
-          const blurVal = (design.shadowBlur / 100) * 0.5;
-          const shadowRad = (design.shadowAngle * Math.PI) / 180;
-          const shadowDist = design.shadowOffset * 0.005; 
-          const sx = Math.cos(shadowRad) * shadowDist;
-          const sy = Math.sin(shadowRad) * shadowDist;
-          
-          shadows.push(`${sx}em ${sy}em ${blurVal}em ${design.shadowColor}`);
-      }
-
-      if (design.specialEffect === 'glitch') {
-          const offset = design.effectIntensity * 0.02; 
-          
-          if (design.isRainbowGlitch) {
-               const spread = offset * 1.5; 
-               const colors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
-               const mid = Math.floor(colors.length / 2); 
-               const angleRad = (design.effectAngle * Math.PI) / 180;
-               
-               colors.forEach((c, i) => {
-                   const dist = (i - mid) * spread;
-                   const dx = Math.cos(angleRad) * dist;
-                   const dy = Math.sin(angleRad) * dist;
-                   shadows.push(`${dx}em ${dy}em 0px ${c}`);
-               });
-          } else {
-                const c1 = design.effectColor;
-                const c2 = design.effectColor2;
-                shadows.push(`${-offset}em 0px 0px ${c1}`);
-                shadows.push(`${offset}em 0px 0px ${c2}`);
-          }
-      }
-
-      if (design.specialEffect === 'echo') {
-          const dist = design.effectIntensity * 0.2;
-          const angleRad = (design.effectAngle * Math.PI) / 180;
-          const dx = Math.cos(angleRad) * dist;
-          const dy = Math.sin(angleRad) * dist;
-          
-          for(let i=1; i<=5; i++) {
-             shadows.push(`${i*dx}px ${i*dy}px 0px ${design.textColor}60`); 
-          }
-      }
-
-      if (shadows.length > 0) {
-          styles.textShadow = shadows.join(', ');
-      }
-
-      return styles;
-  };
-
-  const specialStyles = getSpecialEffectStyles();
+  }), [generateExport]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDraggingFile(true);
@@ -435,8 +603,15 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     if (design.orientation === 'portrait') {
         ratio = h / w;
     }
-    return { aspectRatio: `${ratio}` };
+    return `${ratio}`;
   };
+  
+  // Cursor logic
+  let cursorStyle = 'default';
+  if (design.isPathInputMode) cursorStyle = 'crosshair';
+  else if (isPanning) cursorStyle = 'grabbing';
+  else if (imageSrc) cursorStyle = 'grab';
+
 
   return (
     <>
@@ -456,16 +631,17 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={() => setIsPanning(false)}
-      style={{ cursor: isPanning ? 'grabbing' : (imageSrc ? 'grab' : 'default') }}
+      onMouseLeave={handleMouseUp}
+      style={{ cursor: cursorStyle }}
     >
       <div 
         style={{
-           ...(!imageSrc ? getEmptyStateRatio() : {}),
+           aspectRatio: imgDims ? `${imgDims.w}/${imgDims.h}` : getEmptyStateRatio(),
            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomScale})`,
            transformOrigin: 'center center'
         }}
         className={`
+          canvas-content
           relative overflow-hidden shadow-2xl rounded-[3px] bg-neutral-900 
           flex items-center justify-center select-none transition-all duration-0 ease-linear
           ${!imageSrc ? 'w-full max-w-md' : 'w-auto h-auto max-w-full max-h-full'}
@@ -475,41 +651,31 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
       >
         {imageSrc ? (
           <>
+            {/* Background Image */}
             <img 
+              key={imageSrc} // FORCE NEW ELEMENT
               src={imageSrc} 
               alt="Background" 
               className="max-w-full max-h-full object-contain pointer-events-none"
+              width={imgDims?.w}
+              height={imgDims?.h}
             />
             
-            <div
-              className="absolute whitespace-pre-wrap leading-tight transition-all duration-200 ease-out origin-center"
-              style={{
-                left: `${design.overlayPosition.x}%`,
-                top: `${design.overlayPosition.y}%`,
-                transform: `
-                  translate(-50%, -50%) 
-                  rotate(${design.rotation}deg) 
-                  scale(${design.flipX ? -1 : 1}, ${design.flipY ? -1 : 1})
-                `,
-                fontFamily: design.fontFamily,
-                fontSize: `${design.textSize * 0.8}vw`,
-                letterSpacing: `${design.letterSpacing * 0.05}vw`, 
-                color: design.isHollow ? 'transparent' : design.textColor,
-                textAlign: design.textAlign,
-                filter: getFilterStyle(),
-                mixBlendMode: design.blendMode as any,
-                opacity: design.opacity,
-                width: '100%', 
-                pointerEvents: 'none',
-                fontWeight: design.isBold ? 'bold' : 'normal',
-                fontStyle: design.isItalic ? 'italic' : 'normal',
-                textTransform: design.isUppercase ? 'uppercase' : 'none',
-                WebkitTextStroke: getStrokeStyle(),
-                ...specialStyles, 
-              }}
-            >
-              {design.textOverlay}
-            </div>
+            {/* Text / Visuals Layer - Replaces DOM Text */}
+            <canvas 
+                ref={textCanvasRef}
+                className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-150 ${imgDims ? 'opacity-100' : 'opacity-0'}`}
+            />
+
+            {/* Path Hint Overlay (if path exists but not drawing) */}
+            {design.isPathInputMode && design.pathPoints.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="bg-black/50 backdrop-blur px-4 py-2 rounded-full text-white text-xs flex items-center gap-2 border border-white/10 animate-pulse">
+                        <PenTool size={12} />
+                        <span>Draw path on image...</span>
+                    </div>
+                </div>
+            )}
           </>
         ) : (
           <div 
