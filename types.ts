@@ -82,6 +82,7 @@ export interface DesignState {
   // Path / Curve Data
   pathPoints: Point[]; // Array of coordinates relative to the image dimensions
   isPathInputMode: boolean; // If true, user is drawing on canvas instead of panning
+  isPathMoveMode: boolean; // If true, user is moving the existing path
 
   // Shadow Controls
   shadowBlur: number;

@@ -26,6 +26,7 @@ const DEFAULT_DESIGN: DesignState = {
   // Path
   pathPoints: [],
   isPathInputMode: false,
+  isPathMoveMode: false,
 
   // Blurs
   shadowBlur: 20,
@@ -93,6 +94,7 @@ export default function App() {
             flipY: false,
             pathPoints: [], // Clear path on new gen
             isPathInputMode: false,
+            isPathMoveMode: false,
             textOverlay: isDefaultText ? design.prompt.substring(0, 20).toUpperCase() : prev.textOverlay
         };
       });
@@ -180,6 +182,7 @@ export default function App() {
         blendMode: 'normal',
         pathPoints: [],
         isPathInputMode: false,
+        isPathMoveMode: false,
         textOverlay: 'BLANK CANVAS'
     }));
     setIsBlankConfirmOpen(false);
@@ -191,6 +194,10 @@ export default function App() {
     } else {
         executeBlankCanvas();
     }
+  };
+
+  const handleUploadTrigger = () => {
+    canvasRef.current?.triggerFileUpload();
   };
 
   const handleImageUpload = (file: File) => {
@@ -244,7 +251,8 @@ export default function App() {
                 aspectRatio: closestRatio,
                 orientation: newOrientation,
                 pathPoints: [],
-                isPathInputMode: false
+                isPathInputMode: false,
+                isPathMoveMode: false
             }));
             setImageSrc(result);
         };
@@ -313,6 +321,7 @@ export default function App() {
           onGenerate={handleGenerateClick}
           onEdit={handleEdit}
           onBlank={handleBlankClick}
+          onUpload={handleUploadTrigger}
           onDownload={handleDownload}
           onOpenSettings={() => setIsSettingsOpen(true)}
           isGenerating={isGenerating}

@@ -14,6 +14,7 @@ interface CanvasProps {
 
 export interface CanvasHandle {
   exportImage: () => Promise<string>;
+  triggerFileUpload: () => void;
 }
 
 // Helper: Hex to RGB
@@ -46,9 +47,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   // Interaction States
   const [isPanning, setIsPanning] = useState(false);
   const [isDrawingPath, setIsDrawingPath] = useState(false);
+  const [isMovingPath, setIsMovingPath] = useState(false);
   
   const dragStartRef = useRef({ x: 0, y: 0 });
   const currentPathRef = useRef<Point[]>([]);
+  const movePathStartRef = useRef<{mouse: Point, points: Point[]} | null>(null);
   
   const [imgDims, setImgDims] = useState<{ w: number, h: number } | null>(null);
 
@@ -113,15 +116,31 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   const handleMouseDown = (e: React.MouseEvent) => {
       if (!imageSrc) return;
 
+      const coords = getIntrinsicCoordinates(e);
+
       // Mode: Drawing Path
       if (design.isPathInputMode) {
           e.preventDefault();
           
-          const coords = getIntrinsicCoordinates(e);
           if (!coords) return;
 
           setIsDrawingPath(true);
           currentPathRef.current = [coords];
+          return;
+      }
+
+      // Mode: Moving Path
+      if (design.isPathMoveMode && design.pathPoints.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          if (!coords) return;
+
+          setIsMovingPath(true);
+          movePathStartRef.current = {
+              mouse: coords,
+              points: [...design.pathPoints]
+          };
           return;
       }
 
@@ -137,15 +156,33 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+      const coords = getIntrinsicCoordinates(e);
+
       // Drawing
       if (isDrawingPath) {
-          const coords = getIntrinsicCoordinates(e);
           if (!coords) return;
           
           currentPathRef.current.push(coords);
           
           // Live render the path line
           renderToContext(textCanvasRef.current?.getContext('2d') || null, imgDims?.w || 0, imgDims?.h || 0, true);
+          return;
+      }
+
+      // Moving Path
+      if (isMovingPath && movePathStartRef.current) {
+          e.preventDefault();
+          if (!coords) return;
+
+          const dx = coords.x - movePathStartRef.current.mouse.x;
+          const dy = coords.y - movePathStartRef.current.mouse.y;
+
+          const newPoints = movePathStartRef.current.points.map(p => ({
+              x: p.x + dx,
+              y: p.y + dy
+          }));
+
+          onPathDrawn(newPoints);
           return;
       }
 
@@ -165,6 +202,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
           // Simplify path slightly to reduce jitter?
           onPathDrawn(currentPathRef.current);
           currentPathRef.current = [];
+      }
+      if (isMovingPath) {
+          setIsMovingPath(false);
+          movePathStartRef.current = null;
       }
       setIsPanning(false);
   };
@@ -203,21 +244,41 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     ctx.globalAlpha = 1.0;
     ctx.globalCompositeOperation = 'source-over';
 
-    // If just drawing the line during interaction (ONLY IN PREVIEW)
-    if (isPreview && isDrawingPath && currentPathRef.current.length > 1) {
+    // Draw Path Line Helper (For Drawing OR Moving)
+    // We show the line if:
+    // 1. User is currently drawing a new path (isDrawingPath)
+    // 2. User is in "Move Mode" and a path exists (isPathMoveMode)
+    const showPathLine = isPreview && (
+        (isDrawingPath && currentPathRef.current.length > 1) ||
+        (design.isPathMoveMode && design.pathPoints.length > 1)
+    );
+
+    if (showPathLine) {
+        const pointsToDraw = isDrawingPath ? currentPathRef.current : design.pathPoints;
+        
+        ctx.save();
         ctx.beginPath();
         ctx.strokeStyle = '#ec4899'; // Pink-500
-        // Scale line width based on image resolution so it's visible
-        ctx.lineWidth = Math.max(2, width * 0.005); 
+        ctx.lineWidth = Math.max(2, width * 0.003); 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+
+        // Add visual distinction for Move Mode
+        if (design.isPathMoveMode && !isDrawingPath) {
+             ctx.setLineDash([15, 15]); 
+             ctx.globalAlpha = 0.6;
+        }
         
-        ctx.moveTo(currentPathRef.current[0].x, currentPathRef.current[0].y);
-        for(const p of currentPathRef.current) {
+        ctx.moveTo(pointsToDraw[0].x, pointsToDraw[0].y);
+        for(const p of pointsToDraw) {
             ctx.lineTo(p.x, p.y);
         }
         ctx.stroke();
-        return; 
+        ctx.restore();
+        
+        // If drawing, we stop here (don't render text).
+        // If moving, we continue to render text so user can see what they are moving.
+        if (isDrawingPath) return; 
     }
 
     // Setup Font
@@ -565,8 +626,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     });
 
     // Avoid drawing UI helpers on export
-    const noUiDesign = { ...design, isPathInputMode: false }; 
-    // We can modify renderToContext to accept a flag or just pass false for isPreview
+    // Force path mode off for rendering if we don't want dashed lines on export
+    // Actually, renderToContext(..., false) already handles skipping isPreview logic
+    // But we might want to ensure 'isPathMoveMode' doesn't trigger dashed lines even if we passed true?
+    // renderToContext uses 'isPreview' flag. passing false ensures no helpers are drawn.
 
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
@@ -581,7 +644,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   }, [imageSrc, renderToContext]);
 
   useImperativeHandle(ref, () => ({
-    exportImage: generateExport
+    exportImage: generateExport,
+    triggerFileUpload: () => fileInputRef.current?.click()
   }), [generateExport]);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -609,6 +673,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
   // Cursor logic
   let cursorStyle = 'default';
   if (design.isPathInputMode) cursorStyle = 'crosshair';
+  else if (design.isPathMoveMode) cursorStyle = 'move'; // New cursor for move mode
   else if (isPanning) cursorStyle = 'grabbing';
   else if (imageSrc) cursorStyle = 'grab';
 

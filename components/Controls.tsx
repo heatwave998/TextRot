@@ -2,11 +2,12 @@
 import React from 'react';
 import { DesignState, FontFamily, AspectRatio, SpecialEffect } from '../types';
 import { 
-  Type, Palette, Layers, Move, Download, Sparkles, 
+  Type, Palette, Layers, Download, Sparkles, 
   Bold, Italic, CaseUpper, FlipHorizontal, FlipVertical, 
-  RotateCw, CircleDashed, Square, Settings, FilePlus,
+  RotateCw, CircleDashed, Square, Settings, FilePlus, ImagePlus,
   Ban, Compass, ToggleRight, ToggleLeft, Paintbrush,
-  Monitor, Smartphone, AlignCenterHorizontal, PenTool, Trash2, Route
+  Monitor, Smartphone, AlignCenterHorizontal, PenTool, Trash2, Route,
+  AlignLeft, AlignCenter, AlignRight, Move
 } from 'lucide-react';
 
 interface ControlsProps {
@@ -15,6 +16,7 @@ interface ControlsProps {
   onGenerate: () => void;
   onEdit: () => void;
   onBlank: () => void;
+  onUpload: () => void;
   onDownload: () => void;
   onOpenSettings: () => void;
   isGenerating: boolean;
@@ -81,6 +83,7 @@ const Controls: React.FC<ControlsProps> = ({
   onGenerate, 
   onEdit,
   onBlank,
+  onUpload,
   onDownload,
   onOpenSettings,
   isGenerating,
@@ -106,15 +109,22 @@ const Controls: React.FC<ControlsProps> = ({
   };
 
   const handleClearPath = () => {
-      setDesign(prev => ({ ...prev, pathPoints: [] }));
+      setDesign(prev => ({ ...prev, pathPoints: [], isPathMoveMode: false }));
   };
 
   const handleTogglePathMode = () => {
-      // If currently drawing, stop. If not, start.
       setDesign(prev => ({ 
           ...prev, 
           isPathInputMode: !prev.isPathInputMode,
-          // If we enter mode, we don't clear path immediately, user might want to redraw
+          isPathMoveMode: false // Turn off move mode if drawing
+      }));
+  };
+
+  const handleToggleMoveMode = () => {
+      setDesign(prev => ({
+          ...prev,
+          isPathMoveMode: !prev.isPathMoveMode,
+          isPathInputMode: false // Turn off draw mode if moving
       }));
   };
 
@@ -125,7 +135,7 @@ const Controls: React.FC<ControlsProps> = ({
       <div className="p-6 border-b border-neutral-800 flex items-start justify-between bg-neutral-900 shrink-0 z-10">
         <div>
             <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500 mb-1">
-            ///Textrot Studio
+            ///textrot studio
             </h2>
             <p className="text-xs text-neutral-400">
             Visuals by Gemini 3 Pro.<br/>Typography by You.
@@ -145,7 +155,7 @@ const Controls: React.FC<ControlsProps> = ({
         
         {/* Generator */}
         <div className="p-6 border-b border-neutral-800 space-y-4">
-          <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider">Prompt</label>
+          <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider">Image Prompt</label>
           <textarea 
             className="w-full bg-neutral-950 border border-neutral-800 rounded-[3px] p-3 text-sm focus:outline-none focus:border-pink-500 transition-colors resize-y min-h-[6rem]"
             placeholder="e.g. A cyberpunk samurai in neon rain..."
@@ -250,6 +260,15 @@ const Controls: React.FC<ControlsProps> = ({
               >
                   <FilePlus size={18} />
               </button>
+
+              {/* Upload Button */}
+              <button
+                  onClick={onUpload}
+                  className="w-12 bg-neutral-800 hover:bg-neutral-700 text-white rounded-[3px] flex items-center justify-center"
+                  title="Upload local image"
+              >
+                  <ImagePlus size={18} />
+              </button>
           </div>
         </div>
 
@@ -261,17 +280,36 @@ const Controls: React.FC<ControlsProps> = ({
             </div>
             
             <div className="flex gap-2">
+                {/* Draw Path Button */}
                 <button 
                     onClick={handleTogglePathMode}
+                    disabled={design.isPathMoveMode}
                     className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
                         design.isPathInputMode 
                         ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
-                        : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900'
+                        : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
                 >
                     <PenTool size={14} />
-                    {design.isPathInputMode ? 'Drawing Active' : 'Draw Curve'}
+                    {design.isPathInputMode ? 'Drawing Active' : 'Draw Path'}
                 </button>
+
+                {/* Move Path Button */}
+                {design.pathPoints.length > 0 && (
+                    <button 
+                        onClick={handleToggleMoveMode}
+                        disabled={design.isPathInputMode}
+                        className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
+                            design.isPathMoveMode 
+                            ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
+                            : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed'
+                        }`}
+                        title="Move the existing path"
+                    >
+                        <Move size={14} />
+                        Move Path
+                    </button>
+                )}
 
                 {design.pathPoints.length > 0 && (
                      <button 
@@ -285,6 +323,9 @@ const Controls: React.FC<ControlsProps> = ({
             </div>
             {design.isPathInputMode && (
                 <p className="text-[10px] text-neutral-500">Click and drag on the image to draw a path.</p>
+            )}
+            {design.isPathMoveMode && (
+                <p className="text-[10px] text-neutral-500">Drag anywhere to move the path.</p>
             )}
         </div>
 
@@ -326,28 +367,72 @@ const Controls: React.FC<ControlsProps> = ({
             </select>
 
             {/* Modifiers Toolbar */}
-            <div className="flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
+            <div className="flex gap-1 bg-neutral-950 rounded-[6px] p-1 border border-neutral-800">
                 <button 
                   onClick={() => toggle('isBold')}
                   className={`flex-1 h-10 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.isBold ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                   title="Toggle Bold"
                 >
-                  <Bold size={20} />
+                  <Bold size={18} strokeWidth={3} />
                 </button>
                 <button 
                   onClick={() => toggle('isItalic')}
                   className={`flex-1 h-10 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.isItalic ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                   title="Toggle Italic"
                 >
-                  <Italic size={20} />
+                  <Italic size={18} />
                 </button>
                 <button 
                   onClick={() => toggle('isUppercase')}
                   className={`flex-1 h-10 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.isUppercase ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
                   title="Toggle Uppercase"
                 >
-                  <CaseUpper size={20} />
+                  <CaseUpper size={28} />
                 </button>
+            </div>
+
+            {/* Alignment & Flips (Using Icons) */}
+            <div className="flex gap-2">
+                  <div className="flex-1 flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
+                      <button
+                          onClick={() => update('textAlign', 'left')}
+                          className={`flex-1 h-8 rounded-[3px] flex items-center justify-center ${design.textAlign === 'left' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}
+                          title="Align Left"
+                      >
+                          <AlignLeft size={16} />
+                      </button>
+                      <button
+                          onClick={() => update('textAlign', 'center')}
+                          className={`flex-1 h-8 rounded-[3px] flex items-center justify-center ${design.textAlign === 'center' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}
+                          title="Align Center"
+                      >
+                          <AlignCenter size={16} />
+                      </button>
+                      <button
+                          onClick={() => update('textAlign', 'right')}
+                          className={`flex-1 h-8 rounded-[3px] flex items-center justify-center ${design.textAlign === 'right' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}
+                          title="Align Right"
+                      >
+                          <AlignRight size={16} />
+                      </button>
+                  </div>
+                  
+                  <div className="flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
+                      <button 
+                          onClick={() => toggle('flipX')}
+                          className={`h-8 w-8 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.flipX ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                          title="Flip horizontal"
+                      >
+                          <FlipHorizontal size={16} />
+                      </button>
+                      <button 
+                          onClick={() => toggle('flipY')}
+                          className={`h-8 w-8 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.flipY ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
+                          title="Flip vertical"
+                      >
+                          <FlipVertical size={16} />
+                      </button>
+                  </div>
             </div>
 
             {/* Kerning / Letter Spacing */}
@@ -360,12 +445,73 @@ const Controls: React.FC<ControlsProps> = ({
                     <span className="text-[10px] text-neutral-500">{design.letterSpacing}px</span>
                 </div>
                 <input 
-                    type="range" min="-10" max="50" step="1"
+                    type="range" min="-20" max="100" step="1"
                     value={design.letterSpacing}
                     onChange={(e) => update('letterSpacing', parseFloat(e.target.value))}
                     className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
                     title="Letter Spacing"
                 />
+            </div>
+
+            {/* Layout & Transform Sliders (Moved underneath Kerning) */}
+            
+            {/* Size */}
+            <div>
+                  <label className="flex justify-between text-xs text-neutral-500 mb-1">
+                      <span>Size</span>
+                      <span>{design.textSize}%</span>
+                  </label>
+                  <input 
+                      type="range" min="1" max="30" step="0.5"
+                      value={design.textSize}
+                      onChange={(e) => update('textSize', parseFloat(e.target.value))}
+                      className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                      title="Text scale"
+                  />
+            </div>
+
+            {/* Position Grid */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                      <label className="flex justify-between text-xs text-neutral-500 mb-1">
+                          <span>X</span>
+                          <span>{design.overlayPosition.x}%</span>
+                      </label>
+                      <input 
+                          type="range" min="0" max="100"
+                          value={design.overlayPosition.x}
+                          onChange={(e) => update('overlayPosition', { ...design.overlayPosition, x: parseInt(e.target.value) })}
+                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                          title="Horizontal position"
+                      />
+                </div>
+                <div>
+                      <label className="flex justify-between text-xs text-neutral-500 mb-1">
+                          <span>Y</span>
+                          <span>{design.overlayPosition.y}%</span>
+                      </label>
+                      {/* Inverted Y Slider: Drag Right = Move Up (Decrease Y %) */}
+                      <input 
+                          type="range" min="0" max="100"
+                          value={100 - design.overlayPosition.y} 
+                          onChange={(e) => update('overlayPosition', { ...design.overlayPosition, y: 100 - parseInt(e.target.value) })}
+                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                          title="Vertical position (Right = Up)"
+                      />
+                </div>
+            </div>
+
+            {/* Rotation */}
+            <div className="flex items-center gap-2">
+                  <RotateCw size={14} className="text-neutral-500" />
+                  <input 
+                      type="range" min="0" max="360"
+                      value={design.rotation}
+                      onChange={(e) => update('rotation', parseInt(e.target.value))}
+                      className="flex-1 h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                      title="Rotation angle"
+                  />
+                  <span className="text-xs font-mono text-neutral-500 w-8 text-right">{design.rotation}°</span>
             </div>
 
             {/* Colors */}
@@ -666,106 +812,6 @@ const Controls: React.FC<ControlsProps> = ({
                       </div>
                   </div>
               )}
-          </div>
-
-          {/* Layout & Transforms */}
-          <div className="space-y-3 pt-2 border-t border-neutral-800">
-            <div className="flex items-center gap-2 text-neutral-300">
-              <Move size={16} />
-              <span className="text-sm font-medium">Layout & Transform</span>
-            </div>
-
-            {/* Size */}
-            <div>
-                  <label className="flex justify-between text-xs text-neutral-500 mb-1">
-                      <span>Size</span>
-                      <span>{design.textSize}%</span>
-                  </label>
-                  <input 
-                      type="range" min="1" max="30" step="0.5"
-                      value={design.textSize}
-                      onChange={(e) => update('textSize', parseFloat(e.target.value))}
-                      className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      title="Text scale"
-                  />
-            </div>
-
-            {/* Position Grid */}
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                      <label className="flex justify-between text-xs text-neutral-500 mb-1">
-                          <span>X</span>
-                          <span>{design.overlayPosition.x}%</span>
-                      </label>
-                      <input 
-                          type="range" min="0" max="100"
-                          value={design.overlayPosition.x}
-                          onChange={(e) => update('overlayPosition', { ...design.overlayPosition, x: parseInt(e.target.value) })}
-                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                          title="Horizontal position"
-                      />
-                </div>
-                <div>
-                      <label className="flex justify-between text-xs text-neutral-500 mb-1">
-                          <span>Y</span>
-                          <span>{design.overlayPosition.y}%</span>
-                      </label>
-                      {/* Inverted Y Slider: Drag Right = Move Up (Decrease Y %) */}
-                      <input 
-                          type="range" min="0" max="100"
-                          value={100 - design.overlayPosition.y} 
-                          onChange={(e) => update('overlayPosition', { ...design.overlayPosition, y: 100 - parseInt(e.target.value) })}
-                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                          title="Vertical position (Right = Up)"
-                      />
-                </div>
-            </div>
-
-            {/* Rotation */}
-            <div className="flex items-center gap-2">
-                  <RotateCw size={14} className="text-neutral-500" />
-                  <input 
-                      type="range" min="0" max="360"
-                      value={design.rotation}
-                      onChange={(e) => update('rotation', parseInt(e.target.value))}
-                      className="flex-1 h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      title="Rotation angle"
-                  />
-                  <span className="text-xs font-mono text-neutral-500 w-8 text-right">{design.rotation}°</span>
-            </div>
-
-            {/* Alignment & Flips */}
-            <div className="flex gap-2">
-                  <div className="flex-1 flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
-                      {['left', 'center', 'right'].map((align) => (
-                          <button
-                              key={align}
-                              onClick={() => update('textAlign', align)}
-                              className={`flex-1 py-1 text-[10px] rounded-[3px] uppercase ${design.textAlign === align ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-white'}`}
-                              title={`Align ${align}`}
-                          >
-                              {align.charAt(0)}
-                          </button>
-                      ))}
-                  </div>
-                  
-                  <div className="flex gap-1 bg-neutral-950 rounded-[3px] p-1 border border-neutral-800">
-                      <button 
-                          onClick={() => toggle('flipX')}
-                          className={`h-8 w-8 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.flipX ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
-                          title="Flip horizontal"
-                      >
-                          <FlipHorizontal size={16} />
-                      </button>
-                      <button 
-                          onClick={() => toggle('flipY')}
-                          className={`h-8 w-8 rounded-[3px] hover:bg-neutral-800 flex items-center justify-center ${design.flipY ? 'bg-neutral-800 text-pink-500' : 'text-neutral-400'}`}
-                          title="Flip vertical"
-                      >
-                          <FlipVertical size={16} />
-                      </button>
-                  </div>
-            </div>
           </div>
 
           {/* Blend Mode */}

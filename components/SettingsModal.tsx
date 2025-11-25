@@ -71,7 +71,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         
         {/* Footer */}
         <div className="p-4 bg-neutral-950 border-t border-neutral-800 text-center">
-            <p className="text-[10px] text-neutral-600">///Textrot Studio v1.0</p>
+            <p className="text-[10px] text-neutral-600">///textrot studio v1.0</p>
         </div>
       </div>
     </div>

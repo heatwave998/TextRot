@@ -8,6 +8,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 /**
  * Generates the visual background using Gemini 3 Pro Image Preview.
  * Configured for 2K resolution (2048px).
+ * Reverted to this model due to permission issues with Imagen 4.0.
  */
 export const generateBackgroundImage = async (prompt: string, aspectRatio: AspectRatio, orientation: 'landscape' | 'portrait' = 'landscape'): Promise<string> => {
   try {
