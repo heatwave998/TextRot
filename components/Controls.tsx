@@ -523,16 +523,21 @@ const Controls: React.FC<ControlsProps> = ({
             </div>
 
             {/* Rotation */}
-            <div className="flex items-center gap-2">
-                  <RotateCw size={14} className="text-neutral-500" />
+            <div>
+                  <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                          <RotateCw size={10} />
+                          Rotation
+                      </label>
+                      <span className="text-[10px] text-neutral-500">{design.rotation}°</span>
+                  </div>
                   <input 
                       type="range" min="0" max="360"
                       value={design.rotation}
                       onChange={(e) => update('rotation', parseInt(e.target.value))}
-                      className="flex-1 h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                      className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
                       title="Rotation angle"
                   />
-                  <span className="text-xs font-mono text-neutral-500 w-8 text-right">{design.rotation}°</span>
             </div>
 
             {/* Colors */}
@@ -564,7 +569,7 @@ const Controls: React.FC<ControlsProps> = ({
                         className="text-neutral-500 hover:text-pink-500 transition-colors focus:outline-none flex items-center justify-end"
                         title="Toggle Shadow"
                       >
-                          {design.hasShadow ? <ToggleRight size={32} className="text-pink-500"/> : <ToggleLeft size={32}/>}
+                          {design.hasShadow ? <ToggleRight size={28} className="text-pink-500"/> : <ToggleLeft size={28}/>}
                       </button>
                   </div>
                   <div className={`flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-[3px] p-1 h-10 transition-opacity ${!design.hasShadow ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -689,8 +694,8 @@ const Controls: React.FC<ControlsProps> = ({
                   >
                     {/* Custom Glitch Icon */}
                     <div className="relative font-bold text-2xl leading-none">
-                        <span className="absolute -left-[2px] -top-[1px] text-red-500 mix-blend-screen opacity-80">A</span>
-                        <span className="absolute -right-[2px] -bottom-[1px] text-cyan-500 mix-blend-screen opacity-80">A</span>
+                        <span className="absolute -left-[5px] -top-[1px] text-red-500 mix-blend-screen opacity-80">A</span>
+                        <span className="absolute -right-[5px] -bottom-[1px] text-cyan-500 mix-blend-screen opacity-80">A</span>
                         <span className="relative text-white">A</span>
                     </div>
                   </button>
@@ -709,8 +714,10 @@ const Controls: React.FC<ControlsProps> = ({
                   >
                      {/* Custom Echo Icon */}
                      <div className="relative font-bold text-2xl leading-none">
-                        <span className="absolute -left-[3px] top-0 opacity-20">A</span>
-                        <span className="absolute -left-[1.5px] top-0 opacity-50">A</span>
+                        <span className="absolute -left-[10px] top-0 opacity-10">A</span>
+                        <span className="absolute -left-[7px] top-0 opacity-30">A</span>
+                        <span className="absolute -left-[5px] top-0 opacity-50">A</span>
+                        <span className="absolute -left-[2px] top-0 opacity-70">A</span>
                         <span className="relative">A</span>
                     </div>
                   </button>

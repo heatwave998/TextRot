@@ -51,7 +51,7 @@ const DEFAULT_DESIGN: DesignState = {
   isRainbowGlitch: false,
   effectAngle: 90,
   // Transforms
-  rotation: 0,
+  rotation: 360,
   flipX: false,
   flipY: false
 };
@@ -90,7 +90,7 @@ export default function App() {
         return {
             ...prev,
             overlayPosition: { x: 50, y: 50 },
-            rotation: 0,
+            rotation: 360,
             flipX: false,
             flipY: false,
             pathPoints: [], // Clear path on new gen
