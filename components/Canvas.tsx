@@ -271,6 +271,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     ctx.globalAlpha = 1.0;
     ctx.globalCompositeOperation = 'source-over';
 
+    // DETERMINE BLENDING MODE
+    // In Preview: We draw normally onto the transparent canvas, and use CSS 'mix-blend-mode' 
+    // on the canvas element to blend with the underlying <img>. 
+    // In Export: We draw the image onto the canvas first, so we use globalCompositeOperation to blend text onto it.
+    // Also handling 'normal' which isn't a valid globalCompositeOperation (default is source-over).
+    const effectiveBlendMode = isPreview ? 'source-over' : (design.blendMode === 'normal' ? 'source-over' : design.blendMode);
+
     // *** APPLY SMOOTHING ***
     // We only smooth the main design path. We do NOT smooth the "currently drawing" line 
     // because that feels laggy to the user.
@@ -533,7 +540,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     if (design.hasShadow) {
         ctx.save();
         ctx.globalAlpha = design.opacity; // Shadow should respect main opacity
-        ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
+        ctx.globalCompositeOperation = effectiveBlendMode as GlobalCompositeOperation;
 
         ctx.shadowColor = design.shadowColor;
         ctx.shadowBlur = (design.shadowBlur / 100) * (fontSize * 2);
@@ -560,7 +567,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         const angleRad = (design.effectAngle * Math.PI) / 180;
         const distanceStep = design.effectIntensity * (width * 0.0005); 
 
-        ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
+        ctx.globalCompositeOperation = effectiveBlendMode as GlobalCompositeOperation;
         
         for (let i = echoCount; i > 0; i--) {
              const dx = Math.cos(angleRad) * distanceStep * i;
@@ -579,8 +586,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
              const colors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
              const spread = offset * 1.2; 
              
-             ctx.globalAlpha = 0.5; // Semi-transparent for rainbow stack
-             ctx.globalCompositeOperation = 'screen';
+             ctx.globalAlpha = 1.0; 
+             ctx.globalCompositeOperation = 'source-over';
 
              colors.forEach((c, i) => {
                  const mid = Math.floor(colors.length / 2); 
@@ -620,7 +627,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     ctx.save(); // Save state before applying main text specific props
     
     ctx.globalAlpha = design.opacity;
-    ctx.globalCompositeOperation = design.blendMode as GlobalCompositeOperation;
+    ctx.globalCompositeOperation = effectiveBlendMode as GlobalCompositeOperation;
     
     drawTextItem(rawText, 0, 0, undefined, undefined); // Use defaults
     
@@ -657,12 +664,6 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         img.src = imageSrc; 
     });
 
-    // Avoid drawing UI helpers on export
-    // Force path mode off for rendering if we don't want dashed lines on export
-    // Actually, renderToContext(..., false) already handles skipping isPreview logic
-    // But we might want to ensure 'isPathMoveMode' doesn't trigger dashed lines even if we passed true?
-    // renderToContext uses 'isPreview' flag. passing false ensures no helpers are drawn.
-
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
 
@@ -670,6 +671,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     ctx.drawImage(img, 0, 0);
 
     // 2. Draw Visuals using shared logic
+    // isPreview = false ensures correct globalCompositeOperation is used directly on the image
     renderToContext(ctx, canvas.width, canvas.height, false);
 
     return canvas.toDataURL('image/png');
@@ -762,6 +764,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
             <canvas 
                 ref={textCanvasRef}
                 className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-150 ${imgDims ? 'opacity-100' : 'opacity-0'}`}
+                style={{ 
+                    // Apply mix-blend-mode via CSS for preview so the transparent canvas blends with the underlying <img>
+                    // Temporarily disable blending when moving/drawing path so guidance lines remain visible
+                    mixBlendMode: (design.isPathInputMode || design.isPathMoveMode) ? 'normal' : design.blendMode as any 
+                }}
             />
 
             {/* Path Hint Overlay (if path exists but not drawing) */}

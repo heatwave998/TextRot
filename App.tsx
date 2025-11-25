@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import Canvas, { CanvasHandle } from './components/Canvas';
 import Controls from './components/Controls';
@@ -60,6 +59,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableZoom: true
 };
 
+interface ImageHistoryItem {
+  src: string;
+  aspectRatio: AspectRatio;
+  orientation: Orientation;
+}
+
 export default function App() {
   const [design, setDesign] = useState<DesignState>(DEFAULT_DESIGN);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -69,10 +74,71 @@ export default function App() {
   
   // Image State
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [imageHistory, setImageHistory] = useState<ImageHistoryItem[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
   const [isGenerating, setIsGenerating] = useState(false);
   
   const canvasRef = useRef<CanvasHandle>(null);
+
+  // History Management
+  const addToHistory = (newImageSrc: string, ratio: AspectRatio, orientation: Orientation) => {
+    const newItem: ImageHistoryItem = { src: newImageSrc, aspectRatio: ratio, orientation };
+    
+    // Slice if we are in middle of history
+    const currentHistory = imageHistory.slice(0, historyIndex + 1);
+    const newHistory = [...currentHistory, newItem];
+    
+    // Limit to 10
+    if (newHistory.length > 10) {
+        newHistory.shift();
+    }
+    
+    setImageHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    
+    setImageSrc(newImageSrc);
+    // Note: We don't necessarily update design state here, the calling function usually handles that for new generations.
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        const previousState = imageHistory[newIndex];
+        
+        setHistoryIndex(newIndex);
+        setImageSrc(previousState.src);
+        
+        // Restore associated design constraints
+        setDesign(prev => ({
+            ...prev,
+            aspectRatio: previousState.aspectRatio,
+            orientation: previousState.orientation,
+            pathPoints: [], // Clear paths on undo/redo to avoid mismatches
+            isPathInputMode: false,
+            isPathMoveMode: false
+        }));
+    }
+  };
+
+  const handleRedo = () => {
+      if (historyIndex < imageHistory.length - 1) {
+          const newIndex = historyIndex + 1;
+          const nextState = imageHistory[newIndex];
+          
+          setHistoryIndex(newIndex);
+          setImageSrc(nextState.src);
+          
+          setDesign(prev => ({
+            ...prev,
+            aspectRatio: nextState.aspectRatio,
+            orientation: nextState.orientation,
+            pathPoints: [],
+            isPathInputMode: false,
+            isPathMoveMode: false
+        }));
+      }
+  };
 
   const handleGenerate = async () => {
     if (!design.prompt) return;
@@ -83,7 +149,7 @@ export default function App() {
       const imagePromise = generateBackgroundImage(design.prompt, design.aspectRatio, design.orientation);
       const imgData = await imagePromise;
 
-      setImageSrc(imgData);
+      addToHistory(imgData, design.aspectRatio, design.orientation);
       
       setDesign(prev => {
         const isDefaultText = prev.textOverlay === DEFAULT_DESIGN.textOverlay;
@@ -122,7 +188,8 @@ export default function App() {
       setIsGenerating(true);
       try {
           const editedImgData = await editImage(imageSrc, design.prompt);
-          setImageSrc(editedImgData);
+          // Edit maintains current aspect ratio and orientation
+          addToHistory(editedImgData, design.aspectRatio, design.orientation);
       } catch (error) {
           alert("Failed to edit image. Ensure your API key is valid.");
           console.error(error);
@@ -135,7 +202,6 @@ export default function App() {
     const canvas = document.createElement('canvas');
     
     // Use standard "2K" / 1440p class resolutions for best balance of quality and performance.
-    // No "weird math" or approximations, just standard industry resolutions.
     let width = 2048;
     let height = 2048;
 
@@ -173,7 +239,8 @@ export default function App() {
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.clearRect(0, 0, width, height);
     
-    setImageSrc(canvas.toDataURL('image/png'));
+    const blankImgData = canvas.toDataURL('image/png');
+    addToHistory(blankImgData, design.aspectRatio, design.orientation);
     
     setDesign(prev => ({
         ...prev,
@@ -247,6 +314,8 @@ export default function App() {
             });
 
             // Update State - No Cropping, accept image as is
+            addToHistory(result, closestRatio, newOrientation);
+            
             setDesign(prev => ({
                 ...prev,
                 aspectRatio: closestRatio,
@@ -255,7 +324,6 @@ export default function App() {
                 isPathInputMode: false,
                 isPathMoveMode: false
             }));
-            setImageSrc(result);
         };
         img.src = result;
       }
@@ -325,6 +393,10 @@ export default function App() {
           onUpload={handleUploadTrigger}
           onDownload={handleDownload}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={historyIndex > 0}
+          canRedo={historyIndex < imageHistory.length - 1}
           isGenerating={isGenerating}
           vibeReasoning={null}
           hasImage={!!imageSrc}

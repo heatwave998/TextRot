@@ -7,7 +7,8 @@ import {
   RotateCw, CircleDashed, Square, Settings, FilePlus, ImagePlus,
   Ban, Compass, ToggleRight, ToggleLeft, Paintbrush,
   Monitor, Smartphone, AlignCenterHorizontal, PenTool, Trash2, Route,
-  AlignLeft, AlignCenter, AlignRight, Move, Activity
+  AlignLeft, AlignCenter, AlignRight, Move, Activity,
+  Maximize, MoveHorizontal, MoveVertical, Undo2, Redo2
 } from 'lucide-react';
 
 interface ControlsProps {
@@ -19,6 +20,10 @@ interface ControlsProps {
   onUpload: () => void;
   onDownload: () => void;
   onOpenSettings: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   isGenerating: boolean;
   vibeReasoning: string | null;
   hasImage: boolean;
@@ -86,6 +91,10 @@ const Controls: React.FC<ControlsProps> = ({
   onUpload,
   onDownload,
   onOpenSettings,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   isGenerating,
   vibeReasoning,
   hasImage
@@ -141,13 +150,15 @@ const Controls: React.FC<ControlsProps> = ({
             Visuals by Gemini 3 Pro.<br/>Typography by You.
             </p>
         </div>
-        <button 
-            onClick={onOpenSettings}
-            className="text-neutral-500 hover:text-white transition-colors p-2 rounded-[3px] hover:bg-neutral-800"
-            title="Settings"
-        >
-            <Settings size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+            <button 
+                onClick={onOpenSettings}
+                className="text-neutral-500 hover:text-white transition-colors p-2 rounded-[3px] hover:bg-neutral-800"
+                title="Settings"
+            >
+                <Settings size={20} />
+            </button>
+        </div>
       </div>
 
       {/* Scrollable Content Area */}
@@ -155,7 +166,27 @@ const Controls: React.FC<ControlsProps> = ({
         
         {/* Generator */}
         <div className="p-6 border-b border-neutral-800 space-y-4">
-          <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider">Image Prompt</label>
+          <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-neutral-200 uppercase tracking-wider">Image Prompt</label>
+              <div className="flex items-center gap-1">
+                <button 
+                    onClick={onUndo}
+                    disabled={!canUndo}
+                    className={`p-1 rounded-[3px] transition-colors ${canUndo ? 'text-neutral-400 hover:text-white hover:bg-neutral-800' : 'text-neutral-800 cursor-not-allowed'}`}
+                    title="Undo Image Change"
+                >
+                    <Undo2 size={16} />
+                </button>
+                <button 
+                    onClick={onRedo}
+                    disabled={!canRedo}
+                    className={`p-1 rounded-[3px] transition-colors ${canRedo ? 'text-neutral-400 hover:text-white hover:bg-neutral-800' : 'text-neutral-800 cursor-not-allowed'}`}
+                    title="Redo Image Change"
+                >
+                    <Redo2 size={16} />
+                </button>
+              </div>
+          </div>
           <textarea 
             className="w-full bg-neutral-950 border border-neutral-800 rounded-[3px] p-3 text-sm focus:outline-none focus:border-pink-500 transition-colors resize-y min-h-[6rem]"
             placeholder="e.g. A cyberpunk samurai in neon rain..."
@@ -270,84 +301,6 @@ const Controls: React.FC<ControlsProps> = ({
                   <ImagePlus size={18} />
               </button>
           </div>
-        </div>
-
-        {/* Path Tool */}
-        <div className="p-6 border-b border-neutral-800 space-y-3">
-            <div className="flex items-center gap-2 text-neutral-300">
-              <Route size={16} />
-              <span className="text-sm font-medium">Path Tool</span>
-            </div>
-            
-            <div className="flex gap-2">
-                {/* Draw Path Button */}
-                <button 
-                    onClick={handleTogglePathMode}
-                    disabled={design.isPathMoveMode}
-                    className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
-                        design.isPathInputMode 
-                        ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
-                        : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed'
-                    }`}
-                >
-                    <PenTool size={14} />
-                    {design.isPathInputMode ? 'Drawing Active' : 'Draw Path'}
-                </button>
-
-                {/* Move Path Button */}
-                {design.pathPoints.length > 0 && (
-                    <button 
-                        onClick={handleToggleMoveMode}
-                        disabled={design.isPathInputMode}
-                        className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
-                            design.isPathMoveMode 
-                            ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
-                            : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed'
-                        }`}
-                        title="Move the existing path"
-                    >
-                        <Move size={14} />
-                        Move Path
-                    </button>
-                )}
-
-                {design.pathPoints.length > 0 && (
-                     <button 
-                        onClick={handleClearPath}
-                        className="w-10 flex items-center justify-center rounded-[3px] bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
-                        title="Clear Path (Revert to straight text)"
-                     >
-                         <Trash2 size={14} />
-                     </button>
-                )}
-            </div>
-
-            {/* Smoothing Slider (Only shows when path exists) */}
-            {design.pathPoints.length > 0 && (
-                <div className="pt-2 border-t border-neutral-800/50 animate-in slide-in-from-top-2 fade-in">
-                    <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] text-neutral-500 flex items-center gap-1">
-                            <Activity size={10} />
-                            Smoothing
-                        </label>
-                        <span className="text-[10px] text-neutral-500">{design.pathSmoothing}</span>
-                    </div>
-                    <input 
-                        type="range" min="0" max="40" step="1"
-                        value={design.pathSmoothing}
-                        onChange={(e) => update('pathSmoothing', parseInt(e.target.value))}
-                        className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                        title="Smooth jagged edges in the path"
-                    />
-                </div>
-            )}
-
-            {design.isPathInputMode && (
-                <p className="text-[10px] text-neutral-500">Click and drag on the image to draw a path.</p>
-            )}
-            {design.isPathMoveMode && (
-                <p className="text-[10px] text-neutral-500">Drag anywhere to move the path.</p>
-            )}
         </div>
 
         {/* Typography Controls */}
@@ -478,10 +431,13 @@ const Controls: React.FC<ControlsProps> = ({
             
             {/* Size */}
             <div>
-                  <label className="flex justify-between text-xs text-neutral-500 mb-1">
-                      <span>Size</span>
-                      <span>{design.textSize}%</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                          <Maximize size={10} />
+                          Size
+                      </label>
+                      <span className="text-[10px] text-neutral-500">{design.textSize}%</span>
+                  </div>
                   <input 
                       type="range" min="1" max="30" step="0.5"
                       value={design.textSize}
@@ -494,10 +450,13 @@ const Controls: React.FC<ControlsProps> = ({
             {/* Position Grid */}
             <div className="grid grid-cols-2 gap-4">
                 <div>
-                      <label className="flex justify-between text-xs text-neutral-500 mb-1">
-                          <span>X</span>
-                          <span>{design.overlayPosition.x}%</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                              <MoveHorizontal size={10} />
+                              X Pos
+                          </label>
+                          <span className="text-[10px] text-neutral-500">{design.overlayPosition.x}%</span>
+                      </div>
                       <input 
                           type="range" min="0" max="100"
                           value={design.overlayPosition.x}
@@ -507,10 +466,13 @@ const Controls: React.FC<ControlsProps> = ({
                       />
                 </div>
                 <div>
-                      <label className="flex justify-between text-xs text-neutral-500 mb-1">
-                          <span>Y</span>
-                          <span>{design.overlayPosition.y}%</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                              <MoveVertical size={10} />
+                              Y Pos
+                          </label>
+                          <span className="text-[10px] text-neutral-500">{design.overlayPosition.y}%</span>
+                      </div>
                       {/* Inverted Y Slider: Drag Right = Move Up (Decrease Y %) */}
                       <input 
                           type="range" min="0" max="100"
@@ -531,13 +493,41 @@ const Controls: React.FC<ControlsProps> = ({
                       </label>
                       <span className="text-[10px] text-neutral-500">{design.rotation}°</span>
                   </div>
-                  <input 
-                      type="range" min="0" max="360"
-                      value={design.rotation}
-                      onChange={(e) => update('rotation', parseInt(e.target.value))}
-                      className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      title="Rotation angle"
-                  />
+                  
+                  <div className="relative flex items-center h-4">
+                      {/* Slider Input */}
+                      <input 
+                          type="range" min="0" max="360"
+                          value={design.rotation}
+                          onChange={(e) => {
+                              let val = parseInt(e.target.value);
+                              // Magnetic Snapping Logic
+                              const snapPoints = [0, 90, 180, 270, 360];
+                              const threshold = 15; // Degrees snap range
+                              
+                              for (const point of snapPoints) {
+                                  if (Math.abs(val - point) <= threshold) {
+                                      val = point;
+                                      break;
+                                  }
+                              }
+                              update('rotation', val);
+                          }}
+                          className="relative z-10 w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white block focus:outline-none"
+                          title="Rotation angle (Snaps at 90° intervals)"
+                      />
+                      
+                      {/* Visual Detents (Overlay) */}
+                      <div className="absolute inset-0 flex items-center pointer-events-none z-20">
+                         {[90, 180, 270].map(deg => (
+                            <div 
+                               key={deg} 
+                               className={`absolute w-1 h-1 rounded-full -translate-x-1/2 transition-all duration-300 ${design.rotation === deg ? 'bg-pink-500 w-2 h-2 shadow-[0_0_5px_rgba(236,72,153,0.8)]' : 'bg-neutral-600'}`}
+                               style={{ left: `${(deg/360)*100}%` }}
+                            />
+                         ))}
+                      </div>
+                  </div>
             </div>
 
             {/* Colors */}
@@ -585,22 +575,8 @@ const Controls: React.FC<ControlsProps> = ({
               </div>
             </div>
 
-            {/* Blurs & Opacity */}
+            {/* Shadow Settings (Removed Opacity from here) */}
             <div className="space-y-2 pt-2">
-                  {/* Text Opacity */}
-                  <div>
-                      <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
-                          <span>Opacity</span>
-                          <span>{Math.round(design.opacity * 100)}%</span>
-                      </label>
-                      <input 
-                          type="range" min="0" max="1" step="0.05"
-                          value={design.opacity}
-                          onChange={(e) => update('opacity', parseFloat(e.target.value))}
-                          className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
-                      />
-                  </div>
-
                   {/* Shadow Controls */}
                   <div className={`transition-opacity space-y-2 pt-1 ${!design.hasShadow ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div>
@@ -641,6 +617,84 @@ const Controls: React.FC<ControlsProps> = ({
                       </div>
                   </div>
             </div>
+          </div>
+
+          {/* Text Path Tool (Moved Here) */}
+          <div className="space-y-3 pt-2 border-t border-neutral-800">
+            <div className="flex items-center gap-2 text-neutral-300">
+              <Route size={16} />
+              <span className="text-sm font-medium">Text Path Tool</span>
+            </div>
+            
+            <div className="flex gap-2">
+                {/* Draw Path Button */}
+                <button 
+                    onClick={handleTogglePathMode}
+                    disabled={design.isPathMoveMode}
+                    className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
+                        design.isPathInputMode 
+                        ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
+                        : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed'
+                    }`}
+                >
+                    <PenTool size={14} />
+                    {design.isPathInputMode ? 'Drawing Active' : 'Draw Path'}
+                </button>
+
+                {/* Move Path Button */}
+                {design.pathPoints.length > 0 && (
+                    <button 
+                        onClick={handleToggleMoveMode}
+                        disabled={design.isPathInputMode}
+                        className={`flex-1 py-2 px-3 rounded-[3px] flex items-center justify-center gap-2 text-xs font-medium border transition-all ${
+                            design.isPathMoveMode 
+                            ? 'bg-pink-500/10 text-pink-500 border-pink-500' 
+                            : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed'
+                        }`}
+                        title="Move the existing path"
+                    >
+                        <Move size={14} />
+                        Move Path
+                    </button>
+                )}
+
+                {design.pathPoints.length > 0 && (
+                     <button 
+                        onClick={handleClearPath}
+                        className="w-10 flex items-center justify-center rounded-[3px] bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-red-400 hover:border-red-400/50 transition-colors"
+                        title="Clear Path (Revert to straight text)"
+                     >
+                         <Trash2 size={14} />
+                     </button>
+                )}
+            </div>
+
+            {/* Smoothing Slider (Only shows when path exists) */}
+            {design.pathPoints.length > 0 && (
+                <div className="pt-2 border-t border-neutral-800/50 animate-in slide-in-from-top-2 fade-in">
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                            <Activity size={10} />
+                            Smoothing
+                        </label>
+                        <span className="text-[10px] text-neutral-500">{design.pathSmoothing}</span>
+                    </div>
+                    <input 
+                        type="range" min="0" max="100" step="1"
+                        value={design.pathSmoothing}
+                        onChange={(e) => update('pathSmoothing', parseInt(e.target.value))}
+                        className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                        title="Smooth jagged edges in the path"
+                    />
+                </div>
+            )}
+
+            {design.isPathInputMode && (
+                <p className="text-[10px] text-neutral-500">Click and drag on the image to draw a path.</p>
+            )}
+            {design.isPathMoveMode && (
+                <p className="text-[10px] text-neutral-500">Drag anywhere to move the path.</p>
+            )}
           </div>
 
           {/* Effects (Hollow / Outline / Special FX) */}
@@ -814,11 +868,13 @@ const Controls: React.FC<ControlsProps> = ({
                           <div className="bg-neutral-950 border border-neutral-800 rounded-[3px] p-1 h-[34px] flex items-center">
                               <input 
                                   type="number" 
-                                  min="1" max="10"
+                                  min="0.1" max="50" step="0.1"
                                   value={design.outlineWidth}
                                   onChange={(e) => {
-                                      const val = Math.min(10, Math.max(1, parseInt(e.target.value) || 1));
-                                      update('outlineWidth', val);
+                                      const val = parseFloat(e.target.value);
+                                      if (!isNaN(val)) {
+                                          update('outlineWidth', val);
+                                      }
                                   }}
                                   className="w-full bg-transparent text-xs text-center focus:outline-none"
                                   title="Outline thickness in pixels"
@@ -871,13 +927,28 @@ const Controls: React.FC<ControlsProps> = ({
               <option value="color">Color</option>
               <option value="luminosity">Luminosity</option>
             </select>
+            
+            {/* Opacity Slider */}
+            <div>
+                 <label className="flex justify-between text-[10px] text-neutral-500 mb-1">
+                      <span>Opacity</span>
+                      <span>{Math.round(design.opacity * 100)}%</span>
+                 </label>
+                 <input 
+                      type="range" min="0" max="1" step="0.01"
+                      value={design.opacity}
+                      onChange={(e) => update('opacity', parseFloat(e.target.value))}
+                      className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                      title="Adjust influence of the blend mode"
+                 />
+            </div>
           </div>
         </div>
 
       </div>
 
       {/* Footer Actions - Sticky / Fixed Bottom */}
-      <div className="p-6 border-t border-neutral-800 bg-neutral-900 shrink-0 z-10">
+      <div className="p-6 border-t border-neutral-800 bg-neutral-950 shrink-0 z-10">
         <button 
             onClick={onDownload}
             className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-[3px] font-medium flex items-center justify-center gap-2 transition-colors"
