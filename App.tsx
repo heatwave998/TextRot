@@ -25,6 +25,7 @@ const DEFAULT_DESIGN: DesignState = {
   
   // Path
   pathPoints: [],
+  pathSmoothing: 5, // Default light smoothing
   isPathInputMode: false,
   isPathMoveMode: false,
 

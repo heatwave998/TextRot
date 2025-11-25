@@ -7,7 +7,7 @@ import {
   RotateCw, CircleDashed, Square, Settings, FilePlus, ImagePlus,
   Ban, Compass, ToggleRight, ToggleLeft, Paintbrush,
   Monitor, Smartphone, AlignCenterHorizontal, PenTool, Trash2, Route,
-  AlignLeft, AlignCenter, AlignRight, Move
+  AlignLeft, AlignCenter, AlignRight, Move, Activity
 } from 'lucide-react';
 
 interface ControlsProps {
@@ -321,6 +321,27 @@ const Controls: React.FC<ControlsProps> = ({
                      </button>
                 )}
             </div>
+
+            {/* Smoothing Slider (Only shows when path exists) */}
+            {design.pathPoints.length > 0 && (
+                <div className="pt-2 border-t border-neutral-800/50 animate-in slide-in-from-top-2 fade-in">
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-neutral-500 flex items-center gap-1">
+                            <Activity size={10} />
+                            Smoothing
+                        </label>
+                        <span className="text-[10px] text-neutral-500">{design.pathSmoothing}</span>
+                    </div>
+                    <input 
+                        type="range" min="0" max="40" step="1"
+                        value={design.pathSmoothing}
+                        onChange={(e) => update('pathSmoothing', parseInt(e.target.value))}
+                        className="w-full h-1 bg-neutral-800 rounded-[3px] appearance-none cursor-pointer accent-white"
+                        title="Smooth jagged edges in the path"
+                    />
+                </div>
+            )}
+
             {design.isPathInputMode && (
                 <p className="text-[10px] text-neutral-500">Click and drag on the image to draw a path.</p>
             )}

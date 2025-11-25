@@ -37,6 +37,33 @@ const interpolateColor = (c1: string, c2: string, t: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
+// Helper: Iterative Weighted Moving Average for Smoothing
+const getSmoothedPoints = (points: Point[], iterations: number): Point[] => {
+    if (points.length < 3 || iterations <= 0) return points;
+    
+    let currentPoints = [...points];
+    
+    // Apply smoothing iterations
+    for (let k = 0; k < iterations; k++) {
+        const nextPoints = [...currentPoints];
+        // Skip first and last point to anchor the ends
+        for (let i = 1; i < currentPoints.length - 1; i++) {
+            const prev = currentPoints[i - 1];
+            const curr = currentPoints[i];
+            const next = currentPoints[i + 1];
+
+            // Weighted Average: 15% neighbors, 70% self
+            // This is a simple low-pass filter to remove jitter
+            nextPoints[i] = {
+                x: prev.x * 0.15 + curr.x * 0.7 + next.x * 0.15,
+                y: prev.y * 0.15 + curr.y * 0.7 + next.y * 0.15
+            };
+        }
+        currentPoints = nextPoints;
+    }
+    return currentPoints;
+};
+
 const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enableZoom, className, onImageUpload, onPathDrawn }, ref) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -244,18 +271,22 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
     ctx.globalAlpha = 1.0;
     ctx.globalCompositeOperation = 'source-over';
 
+    // *** APPLY SMOOTHING ***
+    // We only smooth the main design path. We do NOT smooth the "currently drawing" line 
+    // because that feels laggy to the user.
+    const activePointsRaw = isDrawingPath ? currentPathRef.current : design.pathPoints;
+    const activePoints = isDrawingPath ? activePointsRaw : getSmoothedPoints(activePointsRaw, design.pathSmoothing);
+
     // Draw Path Line Helper (For Drawing OR Moving)
     // We show the line if:
     // 1. User is currently drawing a new path (isDrawingPath)
     // 2. User is in "Move Mode" and a path exists (isPathMoveMode)
     const showPathLine = isPreview && (
-        (isDrawingPath && currentPathRef.current.length > 1) ||
-        (design.isPathMoveMode && design.pathPoints.length > 1)
+        (isDrawingPath && activePoints.length > 1) ||
+        (design.isPathMoveMode && activePoints.length > 1)
     );
 
     if (showPathLine) {
-        const pointsToDraw = isDrawingPath ? currentPathRef.current : design.pathPoints;
-        
         ctx.save();
         ctx.beginPath();
         ctx.strokeStyle = '#ec4899'; // Pink-500
@@ -269,8 +300,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
              ctx.globalAlpha = 0.6;
         }
         
-        ctx.moveTo(pointsToDraw[0].x, pointsToDraw[0].y);
-        for(const p of pointsToDraw) {
+        ctx.moveTo(activePoints[0].x, activePoints[0].y);
+        for(const p of activePoints) {
             ctx.lineTo(p.x, p.y);
         }
         ctx.stroke();
@@ -341,9 +372,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ imageSrc, design, enable
         ctx.save();
 
         // --- PATH MODE ---
-        if (design.pathPoints && design.pathPoints.length > 1) {
-            // Logic for drawing text along the pathPoints
-            const path = design.pathPoints;
+        // Use activePoints (which might be smoothed)
+        if (activePoints && activePoints.length > 1) {
+            // Logic for drawing text along the activePoints
+            const path = activePoints;
             const distances = [0];
             for (let i = 1; i < path.length; i++) {
                 const dx = path[i].x - path[i-1].x;
